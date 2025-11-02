@@ -1,3 +1,4 @@
+// pages/admin/DashboardStats.jsx
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { 
@@ -5,7 +6,9 @@ import {
   ImageIcon, 
   Award, 
   Users, 
-  MessageSquare 
+  MessageSquare,
+  MapPin,
+  FileText
 } from 'lucide-react';
 import { adminAPI } from '../../services/api';
 
@@ -16,26 +19,40 @@ const DashboardStats = () => {
     gallery: 0,
     awards: 0,
     members: 0,
-    feedback: 0
+    feedback: 0,
+    nagrikSevaApplications: 0,
+    programs: 0
   });
 
   useEffect(() => {
     const fetchStats = async () => {
       try {
-        const [announcements, gallery, awards, members, feedback] = await Promise.all([
-          adminAPI.getAnnouncements(),
-          adminAPI.getGallery(),
-          adminAPI.getAwards(),
-          adminAPI.getMembers(),
-          adminAPI.getFeedback({ status: 'pending' })
+        const [
+          announcements, 
+          gallery, 
+          awards, 
+          members, 
+          feedback,
+          nagrikSevaApplications,
+          programs
+        ] = await Promise.all([
+          adminAPI.getAnnouncements().catch(() => ({ data: { data: [] } })),
+          adminAPI.getGallery().catch(() => ({ data: { data: [] } })),
+          adminAPI.getAwards().catch(() => ({ data: { data: [] } })),
+          adminAPI.getMembers().catch(() => ({ data: { data: [] } })),
+          adminAPI.getFeedback({ status: 'pending' }).catch(() => ({ data: { data: [] } })),
+          adminAPI.getNagrikSevaApplications().catch(() => ({ data: { data: [] } })),
+          adminAPI.getPrograms().catch(() => ({ data: { data: [] } }))
         ]);
 
         setStats({
-          announcements: announcements.data.count || 0,
-          gallery: gallery.data.count || 0,
-          awards: awards.data.count || 0,
-          members: members.data.count || 0,
-          feedback: feedback.data.count || 0
+          announcements: announcements.data.data?.length || 0,
+          gallery: gallery.data.data?.length || 0,
+          awards: awards.data.data?.length || 0,
+          members: members.data.data?.length || 0,
+          feedback: feedback.data.data?.length || 0,
+          nagrikSevaApplications: nagrikSevaApplications.data.data?.length || 0,
+          programs: programs.data.data?.length || 0
         });
       } catch (error) {
         console.error('Error fetching stats:', error);
@@ -47,39 +64,39 @@ const DashboardStats = () => {
 
   const statItems = [
     {
-      title: t('dashboard.stats.totalAnnouncements'),
+      title: t('dashboard.stats.totalAnnouncements') || 'Announcements',
       value: stats.announcements,
       icon: Megaphone,
-      color: 'bg-blue-500',
-      bgColor: 'bg-blue-50'
+      color: 'from-blue-500 to-cyan-500',
+      bgColor: 'from-blue-50 to-cyan-50'
     },
     {
-      title: t('dashboard.stats.totalGallery'),
+      title: t('dashboard.stats.totalGallery') || 'Gallery Items',
       value: stats.gallery,
       icon: ImageIcon,
-      color: 'bg-green-500',
-      bgColor: 'bg-green-50'
+      color: 'from-green-500 to-emerald-500',
+      bgColor: 'from-green-50 to-emerald-50'
     },
     {
-      title: t('dashboard.stats.totalAwards'),
-      value: stats.awards,
-      icon: Award,
-      color: 'bg-yellow-500',
-      bgColor: 'bg-yellow-50'
-    },
-    {
-      title: t('dashboard.stats.totalMembers'),
-      value: stats.members,
+      title: 'नागरिक सेवा',
+      value: stats.nagrikSevaApplications,
       icon: Users,
-      color: 'bg-purple-500',
-      bgColor: 'bg-purple-50'
+      color: 'from-purple-500 to-fuchsia-500',
+      bgColor: 'from-purple-50 to-fuchsia-50'
     },
     {
-      title: t('dashboard.stats.pendingFeedback'),
+      title: 'Programs',
+      value: stats.programs,
+      icon: Award,
+      color: 'from-yellow-500 to-orange-500',
+      bgColor: 'from-yellow-50 to-orange-50'
+    },
+    {
+      title: t('dashboard.stats.pendingFeedback') || 'Pending Feedback',
       value: stats.feedback,
       icon: MessageSquare,
-      color: 'bg-red-500',
-      bgColor: 'bg-red-50'
+      color: 'from-red-500 to-pink-500',
+      bgColor: 'from-red-50 to-pink-50'
     }
   ];
 
@@ -88,18 +105,18 @@ const DashboardStats = () => {
       {statItems.map((item, index) => {
         const Icon = item.icon;
         return (
-          <div key={index} className={`${item.bgColor} rounded-xl p-6 border border-gray-200`}>
+          <div key={index} className={`group relative overflow-hidden bg-gradient-to-br ${item.bgColor} rounded-2xl p-6 border border-gray-200 hover:shadow-lg transition-all duration-300 hover:scale-105`}>
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600 mb-1">
+                <p className="text-sm font-bold text-gray-700 mb-2">
                   {item.title}
                 </p>
-                <p className="text-3xl font-bold text-gray-900">
+                <p className="text-4xl font-black text-gray-900">
                   {item.value}
                 </p>
               </div>
-              <div className={`${item.color} p-3 rounded-lg`}>
-                <Icon className="h-6 w-6 text-white" />
+              <div className={`bg-gradient-to-r ${item.color} p-4 rounded-xl shadow-lg group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
+                <Icon className="h-7 w-7 text-white" />
               </div>
             </div>
           </div>

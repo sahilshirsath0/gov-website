@@ -10,6 +10,9 @@ import Members from './pages/admin/Members';
 import Feedback from './pages/admin/Feedback';
 import AdminLayout from './components/admin/AdminLayout';
 import ProtectedRoute from './components/common/ProtectedRoute';
+import NagrikSeva from './components/admin/NagrikSeva';
+import VillageDetails from './components/admin/VillageDetails';
+import Programs from './components/admin/Programs';
 import './i18n';
 
 function App() {
@@ -32,6 +35,9 @@ function App() {
             <Route path="awards" element={<Awards />} />
             <Route path="members" element={<Members />} />
             <Route path="feedback" element={<Feedback />} />
+             <Route path="nagrik-seva" element={<NagrikSeva />} />
+            <Route path="village-details" element={<VillageDetails />} />
+            <Route path="programs" element={<Programs />} />
           </Route>
 
           {/* Redirect */}

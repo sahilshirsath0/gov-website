@@ -12,6 +12,9 @@ import galleryRoutes from './routes/gallery.js';
 import awardRoutes from './routes/award.js';
 import feedbackRoutes from './routes/feedback.js';
 import memberRoutes from './routes/member.js';
+import nagrikSevaRoutes from './routes/nagrikSevaRoutes.js';
+import villageDetailRoutes from './routes/villageDetailRoutes.js';
+import programRoutes from './routes/programRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -42,7 +45,9 @@ app.use('/api/gallery', galleryRoutes);
 app.use('/api/awards', awardRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/members', memberRoutes);
-
+app.use('/api/nagrik-seva', nagrikSevaRoutes);
+app.use('/api/village-details', villageDetailRoutes);
+app.use('/api/programs', programRoutes);
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,

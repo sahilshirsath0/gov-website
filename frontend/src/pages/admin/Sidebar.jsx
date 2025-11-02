@@ -9,7 +9,8 @@ import {
   Users, 
   MessageSquare,
   Settings,
-  LogOut
+  LogOut,
+  MapPin
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
@@ -18,44 +19,64 @@ const Sidebar = () => {
   const location = useLocation();
   const { logout } = useAuth();
 
-  const menuItems = [
-    {
-      id: 'dashboard',
-      label: t('sidebar.dashboard'),
-      icon: LayoutDashboard,
-      path: '/admin-dashboard'
-    },
-    {
-      id: 'announcements',
-      label: t('sidebar.announcements'),
-      icon: Megaphone,
-      path: '/admin-dashboard/announcements'
-    },
-    {
-      id: 'gallery',
-      label: t('sidebar.gallery'),
-      icon: ImageIcon,
-      path: '/admin-dashboard/gallery'
-    },
-    {
-      id: 'awards',
-      label: t('sidebar.awards'),
-      icon: Award,
-      path: '/admin-dashboard/awards'
-    },
-    {
-      id: 'members',
-      label: t('sidebar.members'),
-      icon: Users,
-      path: '/admin-dashboard/members'
-    },
-    {
-      id: 'feedback',
-      label: t('sidebar.feedback'),
-      icon: MessageSquare,
-      path: '/admin-dashboard/feedback'
-    }
-  ];
+ // Update your Sidebar component to include the new menu items
+const menuItems = [
+  {
+    id: 'dashboard',
+    label: t('sidebar.dashboard'),
+    icon: LayoutDashboard,
+    path: '/admin-dashboard'
+  },
+  {
+    id: 'announcements',
+    label: t('sidebar.announcements'),
+    icon: Megaphone,
+    path: '/admin-dashboard/announcements'
+  },
+  {
+    id: 'gallery',
+    label: t('sidebar.gallery'),
+    icon: ImageIcon,
+    path: '/admin-dashboard/gallery'
+  },
+  {
+    id: 'nagrik-seva',
+    label: t('sidebar.nagrikSeva'),
+    icon: Users,
+    path: '/admin-dashboard/nagrik-seva'
+  },
+  {
+    id: 'village-details',
+    label: t('sidebar.villageDetails'),
+    icon: MapPin,
+    path: '/admin-dashboard/village-details'
+  },
+  {
+    id: 'programs',
+    label: t('sidebar.programs'),
+    icon: Award,
+    path: '/admin-dashboard/programs'
+  },
+  {
+    id: 'awards',
+    label: t('sidebar.awards'),
+    icon: Award,
+    path: '/admin-dashboard/awards'
+  },
+  {
+    id: 'members',
+    label: t('sidebar.members'),
+    icon: Users,
+    path: '/admin-dashboard/members'
+  },
+  {
+    id: 'feedback',
+    label: t('sidebar.feedback'),
+    icon: MessageSquare,
+    path: '/admin-dashboard/feedback'
+  }
+];
+
 
   const isActive = (path) => location.pathname === path;
 
