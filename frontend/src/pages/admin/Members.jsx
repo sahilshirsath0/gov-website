@@ -16,6 +16,7 @@ import {
   Briefcase
 } from 'lucide-react';
 import { adminAPI } from '../../services/api';
+import './Members.css';
 
 const Members = () => {
   const { t } = useTranslation('admin');
@@ -38,6 +39,11 @@ const Members = () => {
   const [previewUrl, setPreviewUrl] = useState('');
   const [submitError, setSubmitError] = useState('');
 
+  // ADD: Single click prevention and upload states
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
   useEffect(() => {
     fetchMembers();
   }, []);
@@ -54,7 +60,34 @@ const Members = () => {
     }
   };
 
+  // Image compression function
+  const compressImage = (file, maxWidth = 1200, quality = 0.8) => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        let { width, height } = img;
+        
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(resolve, 'image/jpeg', quality);
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
   const handleCreate = () => {
+    if (isSubmitting) return;
+    
     setModalType('create');
     setSelectedMember(null);
     setFormData({
@@ -68,10 +101,13 @@ const Members = () => {
     setSelectedFile(null);
     setPreviewUrl('');
     setSubmitError('');
+    setUploadProgress(0);
     setShowModal(true);
   };
 
   const handleEdit = (member) => {
+    if (isSubmitting) return;
+    
     setModalType('edit');
     setSelectedMember(member);
     setFormData({
@@ -95,19 +131,28 @@ const Members = () => {
   };
 
   const handleDelete = async (id) => {
+    if (isDeleting === id) return;
+    
     if (window.confirm(t('members.confirmDelete'))) {
       try {
+        setIsDeleting(id);
         await adminAPI.deleteMember(id);
         fetchMembers();
       } catch (error) {
         console.error('Error deleting member:', error);
+      } finally {
+        setIsDeleting(null);
       }
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    if (isSubmitting) return;
+    
     setSubmitError('');
+    setUploadProgress(0);
 
     if (!formData.name.trim() || !formData.description.trim()) {
       setSubmitError('Name and description are required');
@@ -115,6 +160,8 @@ const Members = () => {
     }
 
     try {
+      setIsSubmitting(true);
+
       if (modalType === 'create') {
         let submitData = {
           name: formData.name.trim(),
@@ -127,14 +174,27 @@ const Members = () => {
 
         // Add image data if file is selected
         if (selectedFile) {
-          const base64Data = await convertFileToBase64(selectedFile);
+          // Step 1: Compress image (25% progress)
+          setUploadProgress(25);
+          console.log('Compressing image...');
+          const compressedFile = await compressImage(selectedFile);
+          
+          // Step 2: Convert to base64 (50% progress)
+          setUploadProgress(50);
+          const base64Data = await convertFileToBase64(compressedFile);
+          
           submitData.imageData = base64Data;
-          submitData.contentType = selectedFile.type;
+          submitData.contentType = 'image/jpeg';
           submitData.filename = selectedFile.name;
-          submitData.size = selectedFile.size;
+          submitData.size = compressedFile.size;
+          
+          console.log('Compressed file size:', compressedFile.size);
         }
 
+        // Step 3: Upload (75% progress)
+        setUploadProgress(75);
         await adminAPI.createMember(submitData);
+        setUploadProgress(100);
       } else {
         await adminAPI.updateMember(selectedMember._id, {
           name: formData.name.trim(),
@@ -147,21 +207,34 @@ const Members = () => {
         });
       }
 
-      setShowModal(false);
-      fetchMembers();
-      setFormData({
-        name: '',
-        description: '',
-        position: '',
-        department: '',
-        email: '',
-        phone: ''
-      });
-      setSelectedFile(null);
-      setPreviewUrl('');
+      // Success delay for user feedback
+      setTimeout(() => {
+        setShowModal(false);
+        setIsSubmitting(false);
+        setUploadProgress(0);
+        fetchMembers();
+        setFormData({
+          name: '',
+          description: '',
+          position: '',
+          department: '',
+          email: '',
+          phone: ''
+        });
+        setSelectedFile(null);
+        setPreviewUrl('');
+      }, 500);
+
     } catch (error) {
       console.error('Error submitting member:', error);
-      setSubmitError(error.response?.data?.message || 'Error submitting member');
+      setIsSubmitting(false);
+      setUploadProgress(0);
+      
+      if (error.code === 'ECONNABORTED') {
+        setSubmitError('Upload timeout. Please try with a smaller image or check your internet connection.');
+      } else {
+        setSubmitError(error.response?.data?.message || 'Error submitting member');
+      }
     }
   };
 
@@ -198,6 +271,8 @@ const Members = () => {
   };
 
   const removeFile = () => {
+    if (isSubmitting) return;
+    
     setSelectedFile(null);
     setPreviewUrl('');
     // Reset the file input
@@ -205,6 +280,11 @@ const Members = () => {
     if (fileInput) {
       fileInput.value = '';
     }
+  };
+
+  const handleCloseModal = () => {
+    if (isSubmitting) return;
+    setShowModal(false);
   };
 
   const filteredMembers = members.filter(member => {
@@ -235,27 +315,28 @@ const Members = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="loading-container">
+        <div className="loading-spinner"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="members-container">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="members-header">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="page-title">
             {t('members.title')}
           </h1>
-          <p className="text-gray-600">
+          <p className="page-subtitle">
             {t('members.subtitle')}
           </p>
         </div>
-        <button
-          onClick={handleCreate}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200"
+        <button 
+          onClick={handleCreate} 
+          className="btn-create"
+          disabled={isSubmitting}
         >
           <Plus size={20} />
           {t('members.create')}
@@ -263,25 +344,25 @@ const Members = () => {
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg border border-gray-200">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+      <div className="filters-container">
+        <div className="filters-wrapper">
+          <div className="search-container">
+            <Search className="search-icon" size={20} />
             <input
               type="text"
               placeholder={t('members.search')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="search-input"
             />
           </div>
 
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+          <div className="filter-container">
+            <Filter className="filter-icon" size={20} />
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="filter-select"
             >
               <option value="all">{t('members.filter.all')}</option>
               <option value="active">{t('members.filter.active')}</option>
@@ -292,21 +373,22 @@ const Members = () => {
       </div>
 
       {/* Members Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="members-grid">
         {filteredMembers.length === 0 ? (
-          <div className="col-span-full text-center py-12">
-            <div className="text-gray-400 mb-4">
-              <Users size={48} className="mx-auto" />
+          <div className="empty-state">
+            <div className="empty-icon">
+              <Users size={48} />
             </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
+            <h3 className="empty-title">
               {t('members.empty.title')}
             </h3>
-            <p className="text-gray-600 mb-4">
+            <p className="empty-description">
               {t('members.empty.description')}
             </p>
-            <button
-              onClick={handleCreate}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg inline-flex items-center gap-2"
+            <button 
+              onClick={handleCreate} 
+              className="btn-create-empty"
+              disabled={isSubmitting}
             >
               <Plus size={20} />
               {t('members.create')}
@@ -314,87 +396,90 @@ const Members = () => {
           </div>
         ) : (
           filteredMembers.map((member) => (
-            <div key={member._id} className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow duration-200">
+            <div key={member._id} className="member-card">
               {/* Profile Image */}
-              <div className="relative h-48 bg-gray-100">
+              <div className="member-image-container">
                 {getImageUrl(member) ? (
                   <img
                     src={getImageUrl(member)}
                     alt={member.name}
-                    className="w-full h-full object-cover"
+                    className="member-image"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-400">
+                  <div className="member-placeholder">
                     <Users size={48} />
                   </div>
                 )}
                 
-                <div className="absolute top-2 right-2">
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    member.isActive 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-red-100 text-red-800'
-                  }`}>
+                <div className="status-badge-container">
+                  <span className={`status-badge ${member.isActive ? 'status-active' : 'status-inactive'}`}>
                     {member.isActive ? t('members.status.active') : t('members.status.inactive')}
                   </span>
                 </div>
 
-                <div className="absolute top-2 left-2 flex gap-1">
-                  <button
-                    onClick={() => handleView(member)}
-                    className="bg-white text-gray-900 p-1 rounded-full hover:bg-gray-100 transition-colors duration-200"
+                <div className="member-actions">
+                  <button 
+                    onClick={() => handleView(member)} 
+                    className="action-btn"
+                    disabled={isSubmitting}
                   >
                     <Eye size={14} />
                   </button>
-                  <button
-                    onClick={() => handleEdit(member)}
-                    className="bg-white text-gray-900 p-1 rounded-full hover:bg-gray-100 transition-colors duration-200"
+                  <button 
+                    onClick={() => handleEdit(member)} 
+                    className="action-btn"
+                    disabled={isSubmitting}
                   >
                     <Edit2 size={14} />
                   </button>
-                  <button
-                    onClick={() => handleDelete(member._id)}
-                    className="bg-white text-gray-900 p-1 rounded-full hover:bg-gray-100 transition-colors duration-200"
+                  <button 
+                    onClick={() => handleDelete(member._id)} 
+                    className="action-btn action-btn-delete"
+                    disabled={isDeleting === member._id}
                   >
-                    <Trash2 size={14} />
+                    {isDeleting === member._id ? (
+                      <div className="delete-spinner"></div>
+                    ) : (
+                      <Trash2 size={14} />
+                    )}
                   </button>
                 </div>
               </div>
 
               {/* Content */}
-              <div className="p-4">
-                <h3 className="font-medium text-gray-900 mb-1">{member.name}</h3>
+              <div className="member-content">
+                <h3 className="member-name">{member.name}</h3>
                 
                 {member.position && (
-                  <div className="flex items-center gap-1 mb-2">
-                    <Briefcase size={14} className="text-gray-400" />
-                    <span className="text-sm text-gray-600">{member.position}</span>
+                  <div className="member-position">
+                    <Briefcase size={14} className="position-icon" />
+                    <span className="position-text">{member.position}</span>
                   </div>
                 )}
 
                 {member.description && (
-                  <p className="text-gray-600 text-sm mb-3 line-clamp-2">
+                  <p className="member-description">
                     {member.description}
                   </p>
                 )}
 
-                <div className="space-y-1">
+                <div className="member-contacts">
                   {member.email && (
-                    <div className="flex items-center gap-2">
-                      <Mail size={14} className="text-gray-400" />
-                      <span className="text-xs text-gray-600">{member.email}</span>
+                    <div className="contact-item">
+                      <Mail size={14} className="contact-icon" />
+                      <span className="contact-text">{member.email}</span>
                     </div>
                   )}
                   
                   {member.phone && (
-                    <div className="flex items-center gap-2">
-                      <Phone size={14} className="text-gray-400" />
-                      <span className="text-xs text-gray-600">{member.phone}</span>
+                    <div className="contact-item">
+                      <Phone size={14} className="contact-icon" />
+                      <span className="contact-text">{member.phone}</span>
                     </div>
                   )}
                 </div>
 
-                <div className="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
+                <div className="member-footer">
                   <p>{t('members.createdBy')}: {member.createdBy?.username}</p>
                   <p>{formatDate(member.createdAt)}</p>
                 </div>
@@ -404,100 +489,103 @@ const Members = () => {
         )}
       </div>
 
-      {/* Modal */}
+      {/* FIXED: Scrollable Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">
+        <div className="modal-overlay">
+          <div className="modal-container">
+            {/* Fixed Header */}
+            <div className="modal-header">
+              <h2 className="modal-title">
                 {modalType === 'create' && t('members.modal.create')}
                 {modalType === 'edit' && t('members.modal.edit')}
                 {modalType === 'view' && t('members.modal.view')}
               </h2>
-              <button
-                onClick={() => setShowModal(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+              <button 
+                onClick={handleCloseModal} 
+                className="modal-close"
+                disabled={isSubmitting}
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-6">
+            {/* Scrollable Body */}
+            <div className="modal-body-scrollable">
               {modalType === 'view' ? (
-                <div className="space-y-6">
+                <div className="view-content">
                   {getImageUrl(selectedMember) && (
-                    <div className="text-center">
+                    <div className="view-avatar-container">
                       <img
                         src={getImageUrl(selectedMember)}
                         alt={selectedMember?.name}
-                        className="w-32 h-32 object-cover rounded-full mx-auto border-4 border-gray-200"
+                        className="view-avatar"
                       />
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="view-fields">
+                    <div className="view-field">
+                      <label className="view-label">
                         {t('members.form.name')}
                       </label>
-                      <p className="text-gray-900 bg-gray-50 p-3 rounded-lg">
+                      <p className="view-value">
                         {selectedMember?.name}
                       </p>
                     </div>
 
                     {selectedMember?.description && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <div className="view-field">
+                        <label className="view-label">
                           {t('members.form.description')}
                         </label>
-                        <p className="text-gray-900 bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">
+                        <p className="view-value view-description">
                           {selectedMember.description}
                         </p>
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="view-grid">
                       {selectedMember?.position && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <div className="view-field">
+                          <label className="view-label">
                             {t('members.form.position')}
                           </label>
-                          <p className="text-sm text-gray-900 bg-gray-50 p-3 rounded-lg">
+                          <p className="view-value-small">
                             {selectedMember.position}
                           </p>
                         </div>
                       )}
                       
                       {selectedMember?.department && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <div className="view-field">
+                          <label className="view-label">
                             {t('members.form.department')}
                           </label>
-                          <p className="text-sm text-gray-900 bg-gray-50 p-3 rounded-lg">
+                          <p className="view-value-small">
                             {selectedMember.department}
                           </p>
                         </div>
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="view-grid">
                       {selectedMember?.email && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <div className="view-field">
+                          <label className="view-label">
                             {t('members.form.email')}
                           </label>
-                          <p className="text-sm text-gray-900 bg-gray-50 p-3 rounded-lg">
+                          <p className="view-value-small">
                             {selectedMember.email}
                           </p>
                         </div>
                       )}
                       
                       {selectedMember?.phone && (
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <div className="view-field">
+                          <label className="view-label">
                             {t('members.form.phone')}
                           </label>
-                          <p className="text-sm text-gray-900 bg-gray-50 p-3 rounded-lg">
+                          <p className="view-value-small">
                             {selectedMember.phone}
                           </p>
                         </div>
@@ -506,16 +594,16 @@ const Members = () => {
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <form onSubmit={handleSubmit} className="modal-form">
                   {/* Error Message */}
                   {submitError && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                    <div className="error-message">
                       {submitError}
                     </div>
                   )}
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="form-group">
+                    <label className="form-label">
                       {t('members.form.name')} *
                     </label>
                     <input
@@ -523,12 +611,13 @@ const Members = () => {
                       value={formData.name}
                       onChange={(e) => setFormData({...formData, name: e.target.value})}
                       placeholder={t('members.form.namePlaceholder')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="form-input"
+                      disabled={isSubmitting}
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="form-group">
+                    <label className="form-label">
                       {t('members.form.description')} *
                     </label>
                     <textarea
@@ -536,13 +625,14 @@ const Members = () => {
                       onChange={(e) => setFormData({...formData, description: e.target.value})}
                       placeholder={t('members.form.descriptionPlaceholder')}
                       rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="form-textarea"
+                      disabled={isSubmitting}
                     />
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="form-grid">
+                    <div className="form-group">
+                      <label className="form-label">
                         {t('members.form.position')}
                       </label>
                       <input
@@ -550,12 +640,13 @@ const Members = () => {
                         value={formData.position}
                         onChange={(e) => setFormData({...formData, position: e.target.value})}
                         placeholder={t('members.form.positionPlaceholder')}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="form-input"
+                        disabled={isSubmitting}
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <div className="form-group">
+                      <label className="form-label">
                         {t('members.form.department')}
                       </label>
                       <input
@@ -563,14 +654,15 @@ const Members = () => {
                         value={formData.department}
                         onChange={(e) => setFormData({...formData, department: e.target.value})}
                         placeholder={t('members.form.departmentPlaceholder')}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="form-input"
+                        disabled={isSubmitting}
                       />
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="form-grid">
+                    <div className="form-group">
+                      <label className="form-label">
                         {t('members.form.email')}
                       </label>
                       <input
@@ -578,12 +670,13 @@ const Members = () => {
                         value={formData.email}
                         onChange={(e) => setFormData({...formData, email: e.target.value})}
                         placeholder={t('members.form.emailPlaceholder')}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="form-input"
+                        disabled={isSubmitting}
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <div className="form-group">
+                      <label className="form-label">
                         {t('members.form.phone')}
                       </label>
                       <input
@@ -591,46 +684,49 @@ const Members = () => {
                         value={formData.phone}
                         onChange={(e) => setFormData({...formData, phone: e.target.value})}
                         placeholder={t('members.form.phonePlaceholder')}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        className="form-input"
+                        disabled={isSubmitting}
                       />
                     </div>
                   </div>
 
                   {modalType === 'create' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <div className="form-group">
+                      <label className="form-label">
                         {t('members.form.image')}
                       </label>
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-center w-full">
-                          <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors duration-200">
-                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                              <Upload className="w-8 h-8 mb-3 text-gray-400" />
-                              <p className="mb-2 text-sm text-gray-500">
-                                <span className="font-semibold">{t('members.form.clickToUpload')}</span>
+                      <div className="file-upload-section">
+                        <div className="file-upload-container">
+                          <label className={`file-upload-label ${isSubmitting ? 'disabled' : ''}`}>
+                            <div className="file-upload-content">
+                              <Upload className="upload-icon" />
+                              <p className="upload-text">
+                                <span className="upload-highlight">{t('members.form.clickToUpload')}</span>
                               </p>
-                              <p className="text-xs text-gray-500">PNG, JPG, GIF (MAX. 10MB)</p>
+                              <p className="upload-hint">PNG, JPG, GIF (MAX. 10MB)</p>
                             </div>
                             <input
                               type="file"
                               onChange={handleFileChange}
                               accept="image/*"
-                              className="hidden"
+                              className="file-input"
+                              disabled={isSubmitting}
                             />
                           </label>
                         </div>
 
                         {previewUrl && (
-                          <div className="relative text-center">
+                          <div className="preview-container">
                             <img
                               src={previewUrl}
                               alt="Preview"
-                              className="w-32 h-32 object-cover rounded-full mx-auto border-4 border-gray-200"
+                              className="preview-image"
                             />
                             <button
                               type="button"
                               onClick={removeFile}
-                              className="absolute -top-2 -right-2 bg-red-600 text-white p-1 rounded-full hover:bg-red-700 transition-colors duration-200"
+                              className="preview-remove"
+                              disabled={isSubmitting}
                             >
                               <X size={16} />
                             </button>
@@ -639,26 +735,44 @@ const Members = () => {
                       </div>
                     </div>
                   )}
-
-                  <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200">
-                    <button
-                      type="button"
-                      onClick={() => setShowModal(false)}
-                      className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200"
-                    >
-                      {t('members.form.cancel')}
-                    </button>
-                    <button
-                      type="submit"
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200"
-                    >
-                      <Save size={16} />
-                      {modalType === 'create' ? t('members.form.create') : t('members.form.update')}
-                    </button>
-                  </div>
                 </form>
               )}
             </div>
+
+            {/* Fixed Footer - Only for non-view modals */}
+            {modalType !== 'view' && (
+              <div className="modal-footer-fixed">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="btn-cancel"
+                  disabled={isSubmitting}
+                >
+                  {t('members.form.cancel')}
+                </button>
+                <button 
+                  type="submit" 
+                  onClick={handleSubmit}
+                  className="btn-submit"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="submit-spinner"></div>
+                      {modalType === 'create' 
+                        ? (selectedFile ? `Uploading... ${uploadProgress}%` : 'Creating...')
+                        : 'Updating...'
+                      }
+                    </>
+                  ) : (
+                    <>
+                      <Save size={16} />
+                      {modalType === 'create' ? t('members.form.create') : t('members.form.update')}
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

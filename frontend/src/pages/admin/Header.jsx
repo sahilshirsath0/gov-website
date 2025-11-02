@@ -3,47 +3,47 @@ import { useTranslation } from 'react-i18next';
 import { Bell, User, Menu } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import LanguageToggle from '../../components/common/LanguageToggle';
+import './Header.css';
+
 
 const Header = ({ onToggleSidebar }) => {
   const { t } = useTranslation('admin');
   const { admin } = useAuth();
 
+
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
-      <div className="flex items-center justify-between">
+    <header className="header">
+      <div className="header-content">
         {/* Left side */}
-        <div className="flex items-center gap-4">
+        <div className="header-left">
           <button
             onClick={onToggleSidebar}
-            className="lg:hidden p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+            className="menu-toggle-btn"
           >
             <Menu size={20} />
           </button>
-          <h1 className="text-xl font-semibold text-gray-900">
+          <h1 className="header-title">
             {t('header.title')}
           </h1>
         </div>
 
+
         {/* Right side */}
-        <div className="flex items-center gap-4">
+        <div className="header-right">
           <LanguageToggle />
           
           {/* Notifications */}
-          <button className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors duration-200">
-            <Bell size={20} />
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center">
-              3
-            </span>
-          </button>
+        
+
 
           {/* User Profile */}
-          <div className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg">
-            <div className="bg-blue-600 p-2 rounded-full">
-              <User className="h-4 w-4 text-white" />
+          <div className="user-profile">
+            <div className="user-avatar">
+              <User className="user-icon" />
             </div>
-            <div className="text-sm">
-              <p className="font-medium text-gray-900">{admin?.username}</p>
-              <p className="text-gray-600">{t('header.role')}</p>
+            <div className="user-info">
+              <p className="user-name">{admin?.username}</p>
+              <p className="user-role">{t('header.role')}</p>
             </div>
           </div>
         </div>
@@ -51,5 +51,6 @@ const Header = ({ onToggleSidebar }) => {
     </header>
   );
 };
+
 
 export default Header;

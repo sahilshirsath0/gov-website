@@ -89,26 +89,13 @@ const AdminDashboard = () => {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 rounded-2xl shadow-xl p-8 text-white">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">
-              {t('dashboard.welcome')}
-            </h1>
-            <p className="text-blue-100 text-lg">
-              {t('dashboard.subtitle')}
-            </p>
-          </div>
-          <div className="hidden md:block">
-            <div className="bg-white/20 backdrop-blur-sm p-4 rounded-xl">
-              <Calendar className="h-8 w-8 text-white" />
-            </div>
-          </div>
-        </div>
-      </div>
+      
+<div className=''>
+  <DashboardStats />
 
+</div>
       {/* Stats */}
-      <DashboardStats />
+    
 
       {/* Quick Actions Grid */}
       <div>

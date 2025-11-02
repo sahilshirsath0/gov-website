@@ -15,6 +15,7 @@ import {
   Calendar
 } from 'lucide-react';
 import { adminAPI } from '../../services/api';
+import './Programs.css';
 
 const Programs = () => {
   const { t } = useTranslation('admin');
@@ -33,9 +34,39 @@ const Programs = () => {
   const [previewUrl, setPreviewUrl] = useState('');
   const [submitError, setSubmitError] = useState('');
 
+  // ADD: Single click prevention and upload states
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
   useEffect(() => {
     fetchPrograms();
   }, []);
+
+  // Image compression function
+  const compressImage = (file, maxWidth = 1200, quality = 0.8) => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        let { width, height } = img;
+        
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(resolve, 'image/jpeg', quality);
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  };
 
   const fetchPrograms = async () => {
     try {
@@ -50,16 +81,21 @@ const Programs = () => {
   };
 
   const handleCreate = () => {
+    if (isSubmitting) return;
+    
     setModalType('create');
     setSelectedProgram(null);
     setFormData({ name: '', description: '' });
     setSelectedFile(null);
     setPreviewUrl('');
     setSubmitError('');
+    setUploadProgress(0);
     setShowModal(true);
   };
 
   const handleEdit = (program) => {
+    if (isSubmitting) return;
+    
     setModalType('edit');
     setSelectedProgram(program);
     setFormData({
@@ -79,12 +115,17 @@ const Programs = () => {
   };
 
   const handleDelete = async (id) => {
+    if (isDeleting === id) return;
+    
     if (window.confirm(t('programs.confirmDelete'))) {
       try {
+        setIsDeleting(id);
         await adminAPI.deleteProgram(id);
         fetchPrograms();
       } catch (error) {
         console.error('Error deleting program:', error);
+      } finally {
+        setIsDeleting(null);
       }
     }
   };
@@ -118,7 +159,11 @@ const Programs = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    if (isSubmitting) return;
+    
     setSubmitError('');
+    setUploadProgress(0);
 
     if (!formData.name.trim()) {
       setSubmitError('Please enter program name');
@@ -136,35 +181,76 @@ const Programs = () => {
     }
 
     try {
+      setIsSubmitting(true);
+
       const submitData = {
         name: formData.name.trim(),
         description: formData.description.trim()
       };
 
       if (selectedFile) {
-        const base64Data = await convertFileToBase64(selectedFile);
+        // Step 1: Compress image (25% progress)
+        setUploadProgress(25);
+        console.log('Compressing image...');
+        const compressedFile = await compressImage(selectedFile);
+        
+        // Step 2: Convert to base64 (50% progress)  
+        setUploadProgress(50);
+        const base64Data = await convertFileToBase64(compressedFile);
+        
         submitData.imageData = base64Data;
-        submitData.contentType = selectedFile.type;
+        submitData.contentType = 'image/jpeg';
         submitData.filename = selectedFile.name;
-        submitData.size = selectedFile.size;
+        submitData.size = compressedFile.size;
+        
+        console.log('Compressed file size:', compressedFile.size);
       }
 
+      // Step 3: Upload (75% progress)
+      setUploadProgress(75);
+      
       if (modalType === 'create') {
         await adminAPI.createProgram(submitData);
       } else {
         submitData.isActive = true;
         await adminAPI.updateProgram(selectedProgram._id, submitData);
       }
+      
+      setUploadProgress(100);
 
-      setShowModal(false);
-      fetchPrograms();
-      setFormData({ name: '', description: '' });
-      setSelectedFile(null);
-      setPreviewUrl('');
+      // Success delay for user feedback
+      setTimeout(() => {
+        setShowModal(false);
+        setIsSubmitting(false);
+        setUploadProgress(0);
+        fetchPrograms();
+        setFormData({ name: '', description: '' });
+        setSelectedFile(null);
+        setPreviewUrl('');
+      }, 500);
+
     } catch (error) {
       console.error('Error submitting program:', error);
-      setSubmitError('Error submitting program');
+      setIsSubmitting(false);
+      setUploadProgress(0);
+      
+      if (error.code === 'ECONNABORTED') {
+        setSubmitError('Upload timeout. Please try with a smaller image or check your internet connection.');
+      } else {
+        setSubmitError('Error submitting program');
+      }
     }
+  };
+
+  const handleCloseModal = () => {
+    if (isSubmitting) return;
+    setShowModal(false);
+  };
+
+  const removeFile = () => {
+    if (isSubmitting) return;
+    setSelectedFile(null);
+    setPreviewUrl('');
   };
 
   const filteredPrograms = programs.filter(program => {
@@ -186,76 +272,77 @@ const Programs = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="relative">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-200"></div>
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-blue-600 absolute top-0 left-0"></div>
+      <div className="loading-container">
+        <div className="loading-spinner-wrapper">
+          <div className="loading-spinner-outer"></div>
+          <div className="loading-spinner-inner"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="programs-container">
       {/* Header Section */}
-      <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 rounded-2xl shadow-xl p-8 text-white">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="bg-white/20 backdrop-blur-sm p-3 rounded-xl">
-                <Award className="h-8 w-8" />
+      <div className="page-header">
+        <div className="page-header-content">
+          <div className="page-header-left">
+            <div className="header-icon-wrapper">
+              <div className="header-icon-container">
+                <Award className="header-icon" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold tracking-tight">{t('programs.title')}</h1>
-                <p className="text-blue-100 mt-1 text-sm">{t('programs.subtitle')}</p>
+                <h1 className="page-title">{t('programs.title')}</h1>
+                <p className="page-subtitle">{t('programs.subtitle')}</p>
               </div>
             </div>
-            <div className="flex items-center gap-4 text-sm">
-              <div className="bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-lg">
-                <span className="font-semibold">{programs.length}</span> {t('dashboard.stats.totalPrograms')}
+            <div className="stats-container">
+              <div className="stat-badge">
+                <span className="stat-value">{programs.length}</span> {t('dashboard.stats.totalPrograms')}
               </div>
-              <div className="bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-lg">
-                <span className="font-semibold">{programs.filter(p => p.isActive).length}</span> {t('programs.status.active')}
+              <div className="stat-badge">
+                <span className="stat-value">{programs.filter(p => p.isActive).length}</span> {t('programs.status.active')}
               </div>
             </div>
           </div>
           <button
             onClick={handleCreate}
-            className="bg-white text-blue-600 hover:bg-blue-50 px-6 py-3.5 rounded-xl flex items-center gap-2 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 font-semibold group"
+            className="btn-create-header"
+            disabled={isSubmitting}
           >
-            <Plus size={20} className="group-hover:rotate-90 transition-transform duration-300" />
+            <Plus size={20} className="btn-icon-rotate" />
             {t('programs.create')}
           </button>
         </div>
       </div>
 
       {/* Search & Filter */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-6 py-3 border-b border-gray-200">
-          <h3 className="font-semibold text-gray-700 flex items-center gap-2">
+      <div className="content-card">
+        <div className="card-header">
+          <h3 className="card-title">
             <Filter size={18} />
             {t('programs.search')} & {t('common.filter')}
           </h3>
         </div>
-        <div className="p-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative group">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors duration-200" size={20} />
+        <div className="card-body">
+          <div className="search-filter-container">
+            <div className="search-input-wrapper">
+              <Search className="search-icon" size={20} />
               <input
                 type="text"
                 placeholder={t('programs.search')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3.5 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                className="search-input"
               />
             </div>
 
-            <div className="relative group w-full md:w-64">
-              <Filter className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors duration-200 pointer-events-none" size={20} />
+            <div className="filter-select-wrapper">
+              <Filter className="filter-icon" size={20} />
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
-                className="w-full pl-12 pr-10 py-3.5 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 appearance-none cursor-pointer bg-gray-50 focus:bg-white font-medium"
+                className="filter-select"
               >
                 <option value="all">{t('programs.filter.all')}</option>
                 <option value="active">{t('programs.filter.active')}</option>
@@ -267,20 +354,21 @@ const Programs = () => {
       </div>
 
       {/* Programs Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="programs-grid">
         {filteredPrograms.length === 0 ? (
-          <div className="col-span-full">
-            <div className="bg-white rounded-2xl shadow-lg border-2 border-dashed border-gray-300 p-16 text-center">
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Award size={48} className="text-blue-500" />
+          <div className="empty-state">
+            <div className="empty-state-content">
+              <div className="empty-state-icon">
+                <Award size={48} />
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-3">{t('programs.empty.title')}</h3>
-              <p className="text-gray-600 mb-6 max-w-md mx-auto">
+              <h3 className="empty-state-title">{t('programs.empty.title')}</h3>
+              <p className="empty-state-description">
                 {t('programs.empty.description')}
               </p>
               <button
                 onClick={handleCreate}
-                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-3.5 rounded-xl inline-flex items-center gap-2 shadow-lg hover:shadow-xl transition-all duration-300 font-semibold"
+                className="btn-create-empty"
+                disabled={isSubmitting}
               >
                 <Plus size={20} />
                 {t('programs.create')}
@@ -289,81 +377,84 @@ const Programs = () => {
           </div>
         ) : (
           filteredPrograms.map((program) => (
-            <div key={program._id} className="group bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2">
+            <div key={program._id} className="program-card">
               {/* Image */}
-              <div className="relative aspect-video bg-gradient-to-br from-gray-100 to-blue-100 overflow-hidden">
+              <div className="program-image-container">
                 {program.image?.data ? (
                   <img
                     src={program.image.data}
                     alt={program.name}
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    className="program-image"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <Award size={48} className="text-gray-400" />
+                  <div className="program-image-placeholder">
+                    <Award size={48} />
                   </div>
                 )}
                 
                 {/* Status Badge */}
-                <div className="absolute top-3 right-3">
-                  <span className={`px-3 py-1.5 text-xs font-bold rounded-full shadow-lg ${
-                    program.isActive 
-                      ? 'bg-gradient-to-r from-green-500 to-emerald-500 text-white' 
-                      : 'bg-gradient-to-r from-red-500 to-pink-500 text-white'
-                  }`}>
+                <div className="program-status-badge">
+                  <span className={`status-badge ${program.isActive ? 'status-active' : 'status-inactive'}`}>
                     {program.isActive ? t('programs.status.active') : t('programs.status.inactive')}
                   </span>
                 </div>
               </div>
 
-              <div className="p-6">
+              <div className="program-card-body">
                 {/* Header */}
-                <div className="flex items-start justify-between mb-3">
-                  <h3 className="font-bold text-gray-900 text-lg group-hover:text-blue-600 transition-colors duration-300">
+                <div className="program-card-header">
+                  <h3 className="program-title">
                     {program.name}
                   </h3>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className="program-actions">
                     <button
                       onClick={() => handleView(program)}
-                      className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all duration-200 transform hover:scale-110"
+                      className="action-btn action-btn-view"
                       title={t('common.view')}
+                      disabled={isSubmitting}
                     >
                       <Eye size={16} />
                     </button>
                     <button
                       onClick={() => handleEdit(program)}
-                      className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all duration-200 transform hover:scale-110"
+                      className="action-btn action-btn-edit"
                       title={t('common.edit')}
+                      disabled={isSubmitting}
                     >
                       <Edit2 size={16} />
                     </button>
                     <button
                       onClick={() => handleDelete(program._id)}
-                      className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 transform hover:scale-110"
+                      className="action-btn action-btn-delete"
                       title={t('common.delete')}
+                      disabled={isDeleting === program._id}
                     >
-                      <Trash2 size={16} />
+                      {isDeleting === program._id ? (
+                        <div className="delete-spinner"></div>
+                      ) : (
+                        <Trash2 size={16} />
+                      )}
                     </button>
                   </div>
                 </div>
 
                 {/* Description */}
-                <div className="mb-4">
-                  <p className="text-gray-600 text-sm leading-relaxed line-clamp-3">
+                <div className="program-description">
+                  <p className="description-text">
                     {program.description}
                   </p>
                 </div>
 
                 {/* Footer */}
-                <div className="pt-4 border-t border-gray-100">
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2 bg-gradient-to-r from-blue-50 to-indigo-50 px-3 py-2 rounded-lg border border-blue-100">
-                      <Calendar className="h-3 w-3 text-blue-500" />
-                      <span className="text-gray-700 font-medium">
+                <div className="program-card-footer">
+                  <div className="footer-content">
+                    <div className="footer-date">
+                      <Calendar className="footer-icon" />
+                      <span className="footer-text">
                         {formatDate(program.createdAt)}
                       </span>
                     </div>
-                    <span className="text-gray-500 font-medium">
+                    <span className="footer-author">
                       {program.createdBy?.username || 'Admin'}
                     </span>
                   </div>
@@ -374,14 +465,15 @@ const Programs = () => {
         )}
       </div>
 
-      {/* Modal */}
+      {/* FIXED: Scrollable Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-5 text-white">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold flex items-center gap-3">
-                  <div className="bg-white/20 backdrop-blur-sm p-2 rounded-lg">
+        <div className="modal-overlay">
+          <div className="modal-container modal-lg">
+            {/* Fixed Header */}
+            <div className="modal-header">
+              <div className="modal-header-content">
+                <h2 className="modal-title">
+                  <div className="modal-icon">
                     {modalType === 'create' && <Plus size={24} />}
                     {modalType === 'edit' && <Edit2 size={24} />}
                     {modalType === 'view' && <Eye size={24} />}
@@ -391,53 +483,51 @@ const Programs = () => {
                   {modalType === 'view' && t('programs.modal.view')}
                 </h2>
                 <button
-                  onClick={() => setShowModal(false)}
-                  className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-all duration-200"
+                  onClick={handleCloseModal}
+                  className="modal-close-btn"
+                  disabled={isSubmitting}
                 >
                   <X size={24} />
                 </button>
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+            {/* Scrollable Body */}
+            <div className="modal-body-scrollable">
               {modalType === 'view' ? (
-                <div className="space-y-6">
+                <div className="view-mode-content">
                   {/* View Mode Content */}
                   {selectedProgram?.image?.data && (
-                    <div className="bg-gradient-to-br from-gray-50 to-blue-50 p-6 rounded-xl">
+                    <div className="view-image-container">
                       <img
                         src={selectedProgram.image.data}
                         alt={selectedProgram.name}
-                        className="max-w-full h-64 object-contain mx-auto rounded-xl shadow-lg"
+                        className="view-image"
                       />
                     </div>
                   )}
 
-                  <div className="space-y-4">
-                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-5 rounded-xl border border-blue-100">
-                      <label className="block text-sm font-bold text-gray-700 mb-2">{t('programs.form.programName')}</label>
-                      <p className="text-gray-900 font-semibold text-xl">{selectedProgram?.name}</p>
+                  <div className="view-details">
+                    <div className="view-field view-field-blue">
+                      <label className="view-label">{t('programs.form.programName')}</label>
+                      <p className="view-value view-value-title">{selectedProgram?.name}</p>
                     </div>
 
-                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-5 rounded-xl border border-green-100">
-                      <label className="block text-sm font-bold text-gray-700 mb-2">{t('programs.form.description')}</label>
-                      <p className="text-gray-800 leading-relaxed whitespace-pre-wrap">{selectedProgram?.description}</p>
+                    <div className="view-field view-field-green">
+                      <label className="view-label">{t('programs.form.description')}</label>
+                      <p className="view-value view-value-description">{selectedProgram?.description}</p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-xl border border-purple-100">
-                        <label className="block text-sm font-bold text-gray-700 mb-2">{t('programs.form.status')}</label>
-                        <span className={`inline-flex items-center gap-2 px-3 py-1 text-sm font-bold rounded-lg ${
-                          selectedProgram?.isActive 
-                            ? 'bg-green-500 text-white' 
-                            : 'bg-red-500 text-white'
-                        }`}>
+                    <div className="view-grid">
+                      <div className="view-field view-field-purple">
+                        <label className="view-label">{t('programs.form.status')}</label>
+                        <span className={`view-status-badge ${selectedProgram?.isActive ? 'view-status-active' : 'view-status-inactive'}`}>
                           {selectedProgram?.isActive ? t('programs.status.active') : t('programs.status.inactive')}
                         </span>
                       </div>
-                      <div className="bg-gradient-to-br from-yellow-50 to-orange-50 p-4 rounded-xl border border-yellow-100">
-                        <label className="block text-sm font-bold text-gray-700 mb-2">{t('programs.form.created')}</label>
-                        <p className="text-sm text-gray-900 font-medium">
+                      <div className="view-field view-field-yellow">
+                        <label className="view-label">{t('programs.form.created')}</label>
+                        <p className="view-date">
                           {formatDate(selectedProgram?.createdAt)}
                         </p>
                       </div>
@@ -445,50 +535,49 @@ const Programs = () => {
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <form onSubmit={handleSubmit} className="modal-form">
                   {submitError && (
-                    <div className="bg-gradient-to-r from-red-50 to-pink-50 border-l-4 border-red-500 text-red-700 px-5 py-4 rounded-xl">
+                    <div className="error-message">
                       {submitError}
                     </div>
                   )}
 
                   {/* Image Upload */}
-                  <div className="space-y-4">
-                    <label className="block text-sm font-bold text-gray-700">
+                  <div className="form-group">
+                    <label className="form-label">
                       {t('programs.form.programImage')} {modalType === 'create' && '*'}
                     </label>
-                    <div className="flex items-center justify-center w-full">
-                      <label className="flex flex-col items-center justify-center w-full h-48 border-3 border-blue-300 border-dashed rounded-2xl cursor-pointer bg-gradient-to-br from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 transition-all duration-300">
-                        <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                          <Upload className="w-10 h-10 mb-3 text-blue-500" />
-                          <p className="mb-2 text-sm text-gray-700 font-semibold">
-                            <span className="text-blue-600">{t('programs.form.clickToUpload')}</span>
+                    <div className="file-upload-wrapper">
+                      <label className={`file-upload-label ${isSubmitting ? 'disabled' : ''}`}>
+                        <div className="file-upload-content">
+                          <Upload className="upload-icon" />
+                          <p className="upload-text">
+                            <span className="upload-text-highlight">{t('programs.form.clickToUpload')}</span>
                           </p>
-                          <p className="text-xs text-gray-500">PNG, JPG, GIF (MAX. 10MB)</p>
+                          <p className="upload-hint">PNG, JPG, GIF (MAX. 10MB)</p>
                         </div>
                         <input
                           type="file"
                           onChange={handleFileChange}
                           accept="image/*"
-                          className="hidden"
+                          className="file-input"
+                          disabled={isSubmitting}
                         />
                       </label>
                     </div>
 
                     {previewUrl && (
-                      <div className="relative">
+                      <div className="preview-container">
                         <img
                           src={previewUrl}
                           alt="Preview"
-                          className="w-full h-48 object-cover rounded-xl border-2 border-blue-200"
+                          className="preview-image"
                         />
                         <button
                           type="button"
-                          onClick={() => {
-                            setSelectedFile(null);
-                            setPreviewUrl('');
-                          }}
-                          className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-full hover:bg-red-700"
+                          onClick={removeFile}
+                          className="preview-remove-btn"
+                          disabled={isSubmitting}
                         >
                           <X size={16} />
                         </button>
@@ -497,49 +586,69 @@ const Programs = () => {
                   </div>
 
                   {/* Form Fields */}
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">{t('programs.form.programName')} *</label>
+                  <div className="form-fields">
+                    <div className="form-field">
+                      <label className="form-label">{t('programs.form.programName')} *</label>
                       <input
                         type="text"
                         value={formData.name}
                         onChange={(e) => setFormData({...formData, name: e.target.value})}
                         placeholder={t('programs.form.namePlaceholder')}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                        className="form-input"
+                        disabled={isSubmitting}
                       />
                     </div>
 
-                    <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">{t('programs.form.description')} *</label>
+                    <div className="form-field">
+                      <label className="form-label">{t('programs.form.description')} *</label>
                       <textarea
                         value={formData.description}
                         onChange={(e) => setFormData({...formData, description: e.target.value})}
                         placeholder={t('programs.form.descriptionPlaceholder')}
                         rows={6}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none"
+                        className="form-textarea"
+                        disabled={isSubmitting}
                       />
                     </div>
-                  </div>
-
-                  <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200">
-                    <button
-                      type="button"
-                      onClick={() => setShowModal(false)}
-                      className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 border-2 border-gray-300 rounded-xl font-semibold transition-all duration-200"
-                    >
-                      {t('programs.form.cancel')}
-                    </button>
-                    <button
-                      type="submit"
-                      className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-semibold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-                    >
-                      <Save size={18} />
-                      {modalType === 'create' ? t('programs.form.create') : t('programs.form.update')}
-                    </button>
                   </div>
                 </form>
               )}
             </div>
+
+            {/* Fixed Footer - Only for non-view modals */}
+            {modalType !== 'view' && (
+              <div className="modal-footer-fixed">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="btn btn-secondary"
+                  disabled={isSubmitting}
+                >
+                  {t('programs.form.cancel')}
+                </button>
+                <button
+                  type="submit"
+                  onClick={handleSubmit}
+                  className="btn btn-primary"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="submit-spinner"></div>
+                      {modalType === 'create' 
+                        ? (selectedFile ? `Uploading... ${uploadProgress}%` : 'Creating...')
+                        : (selectedFile ? `Uploading... ${uploadProgress}%` : 'Updating...')
+                      }
+                    </>
+                  ) : (
+                    <>
+                      <Save size={18} />
+                      {modalType === 'create' ? t('programs.form.create') : t('programs.form.update')}
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -14,6 +14,8 @@ import {
   Trash2
 } from 'lucide-react';
 import { adminAPI } from '../../services/api';
+import './Feedback.css';
+
 
 const Feedback = () => {
   const { t } = useTranslation('admin');
@@ -28,9 +30,11 @@ const Feedback = () => {
     adminNotes: ''
   });
 
+
   useEffect(() => {
     fetchFeedback();
   }, []);
+
 
   const fetchFeedback = async () => {
     try {
@@ -44,6 +48,7 @@ const Feedback = () => {
     }
   };
 
+
   const handleView = (item) => {
     setSelectedFeedback(item);
     setStatusUpdate({
@@ -52,6 +57,7 @@ const Feedback = () => {
     });
     setShowModal(true);
   };
+
 
   const handleStatusUpdate = async (e) => {
     e.preventDefault();
@@ -64,6 +70,7 @@ const Feedback = () => {
     }
   };
 
+
   const handleDelete = async (id) => {
     if (window.confirm(t('feedback.confirmDelete'))) {
       try {
@@ -75,6 +82,7 @@ const Feedback = () => {
     }
   };
 
+
   const filteredFeedback = feedback.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -83,6 +91,7 @@ const Feedback = () => {
     const matchesFilter = filterStatus === 'all' || item.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
+
 
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -94,61 +103,66 @@ const Feedback = () => {
     });
   };
 
+
   const getStatusColor = (status) => {
     switch (status) {
       case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'status-pending';
       case 'reviewed':
-        return 'bg-blue-100 text-blue-800';
+        return 'status-reviewed';
       case 'resolved':
-        return 'bg-green-100 text-green-800';
+        return 'status-resolved';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'status-default';
     }
   };
 
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="loading-container">
+        <div className="loading-spinner"></div>
       </div>
     );
   }
 
+
   return (
-    <div className="space-y-6">
+    <div className="feedback-container">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="feedback-header">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="page-title">
             {t('feedback.title')}
           </h1>
-          <p className="text-gray-600">
+          <p className="page-subtitle">
             {t('feedback.subtitle')}
           </p>
         </div>
       </div>
 
+
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg border border-gray-200">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+      <div className="filters-card">
+        <div className="filters-container">
+          <div className="search-wrapper">
+            <Search className="search-icon" size={20} />
             <input
               type="text"
               placeholder={t('feedback.search')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="search-input"
             />
           </div>
 
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+
+          <div className="filter-wrapper">
+            <Filter className="filter-icon" size={20} />
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="filter-select"
             >
               <option value="all">{t('feedback.filter.all')}</option>
               <option value="pending">{t('feedback.filter.pending')}</option>
@@ -159,79 +173,82 @@ const Feedback = () => {
         </div>
       </div>
 
+
       {/* Feedback List */}
-      <div className="space-y-4">
+      <div className="feedback-list">
         {filteredFeedback.length === 0 ? (
-          <div className="text-center py-12">
-            <div className="text-gray-400 mb-4">
-              <MessageSquare size={48} className="mx-auto" />
+          <div className="empty-state">
+            <div className="empty-icon">
+              <MessageSquare size={48} />
             </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
+            <h3 className="empty-title">
               {t('feedback.empty.title')}
             </h3>
-            <p className="text-gray-600">
+            <p className="empty-description">
               {t('feedback.empty.description')}
             </p>
           </div>
         ) : (
           filteredFeedback.map((item) => (
-            <div key={item._id} className="bg-white rounded-lg border border-gray-200 hover:shadow-lg transition-shadow duration-200">
-              <div className="p-6">
+            <div key={item._id} className="feedback-card">
+              <div className="feedback-card-body">
                 {/* Header */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="font-medium text-gray-900">{item.subject}</h3>
-                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(item.status)}`}>
+                <div className="feedback-card-header">
+                  <div className="feedback-header-content">
+                    <div className="feedback-title-row">
+                      <h3 className="feedback-subject">{item.subject}</h3>
+                      <span className={`status-badge ${getStatusColor(item.status)}`}>
                         {t(`feedback.status.${item.status}`)}
                       </span>
                     </div>
-                    <div className="flex items-center gap-4 text-sm text-gray-600">
-                      <div className="flex items-center gap-1">
+                    <div className="feedback-meta">
+                      <div className="meta-item">
                         <User size={14} />
                         <span>{item.name}</span>
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="meta-item">
                         <Mail size={14} />
                         <span>{item.email}</span>
                       </div>
                       {item.phone && (
-                        <div className="flex items-center gap-1">
+                        <div className="meta-item">
                           <Phone size={14} />
                           <span>{item.phone}</span>
                         </div>
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="feedback-actions">
                     <button
                       onClick={() => handleView(item)}
-                      className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
+                      className="action-btn action-btn-view"
                     >
                       <Eye size={16} />
                     </button>
                     <button
                       onClick={() => handleDelete(item._id)}
-                      className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200"
+                      className="action-btn action-btn-delete"
                     >
                       <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
 
+
                 {/* Message Preview */}
-                <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                  <p className="text-gray-700 line-clamp-3">{item.message}</p>
+                <div className="feedback-message-preview">
+                  <p className="message-text">{item.message}</p>
                 </div>
 
+
                 {/* Footer */}
-                <div className="flex items-center justify-between text-sm text-gray-500">
-                  <div className="flex items-center gap-1">
+                <div className="feedback-card-footer">
+                  <div className="footer-date">
                     <Calendar size={14} />
                     <span>{formatDate(item.createdAt)}</span>
                   </div>
                   {item.reviewedBy && (
-                    <span>Reviewed by: {item.reviewedBy.username}</span>
+                    <span className="footer-reviewer">Reviewed by: {item.reviewedBy.username}</span>
                   )}
                 </div>
               </div>
@@ -240,78 +257,81 @@ const Feedback = () => {
         )}
       </div>
 
+
       {/* View Modal */}
       {showModal && selectedFeedback && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">
+        <div className="modal-overlay">
+          <div className="modal-container modal-lg">
+            <div className="modal-header">
+              <h2 className="modal-title">
                 {t('feedback.modal.view')}
               </h2>
               <button
                 onClick={() => setShowModal(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+                className="modal-close-btn"
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
+
+            <div className="modal-body modal-scrollable">
               {/* User Information */}
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-3">
+              <div className="modal-section">
+                <h3 className="section-title">
                   {t('feedback.details.userInfo')}
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
+                <div className="info-grid">
+                  <div className="info-field">
+                    <label className="info-label">
                       {t('feedback.form.name')}
                     </label>
-                    <p className="text-gray-900">{selectedFeedback.name}</p>
+                    <p className="info-value">{selectedFeedback.name}</p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
+                  <div className="info-field">
+                    <label className="info-label">
                       {t('feedback.form.email')}
                     </label>
-                    <p className="text-gray-900">{selectedFeedback.email}</p>
+                    <p className="info-value">{selectedFeedback.email}</p>
                   </div>
                   {selectedFeedback.phone && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700">
+                    <div className="info-field">
+                      <label className="info-label">
                         {t('feedback.form.phone')}
                       </label>
-                      <p className="text-gray-900">{selectedFeedback.phone}</p>
+                      <p className="info-value">{selectedFeedback.phone}</p>
                     </div>
                   )}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700">
+                  <div className="info-field">
+                    <label className="info-label">
                       {t('feedback.form.submitted')}
                     </label>
-                    <p className="text-gray-900">{formatDate(selectedFeedback.createdAt)}</p>
+                    <p className="info-value">{formatDate(selectedFeedback.createdAt)}</p>
                   </div>
                 </div>
               </div>
 
+
               {/* Feedback Details */}
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-3">
+              <div className="modal-section">
+                <h3 className="section-title">
                   {t('feedback.details.feedbackDetails')}
                 </h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                <div className="details-content">
+                  <div className="detail-field">
+                    <label className="detail-label">
                       {t('feedback.form.subject')}
                     </label>
-                    <p className="text-gray-900 bg-gray-50 p-3 rounded-lg">
+                    <p className="detail-value">
                       {selectedFeedback.subject}
                     </p>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="detail-field">
+                    <label className="detail-label">
                       {t('feedback.form.message')}
                     </label>
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <p className="text-gray-900 whitespace-pre-wrap">
+                    <div className="message-box">
+                      <p className="message-content">
                         {selectedFeedback.message}
                       </p>
                     </div>
@@ -319,20 +339,21 @@ const Feedback = () => {
                 </div>
               </div>
 
+
               {/* Admin Section */}
-              <div>
-                <h3 className="text-lg font-medium text-gray-900 mb-3">
+              <div className="modal-section">
+                <h3 className="section-title">
                   {t('feedback.details.adminSection')}
                 </h3>
-                <form onSubmit={handleStatusUpdate} className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                <form onSubmit={handleStatusUpdate} className="admin-form">
+                  <div className="form-group">
+                    <label className="form-label">
                       {t('feedback.form.status')}
                     </label>
                     <select
                       value={statusUpdate.status}
                       onChange={(e) => setStatusUpdate({...statusUpdate, status: e.target.value})}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="form-select"
                     >
                       <option value="pending">{t('feedback.status.pending')}</option>
                       <option value="reviewed">{t('feedback.status.reviewed')}</option>
@@ -340,8 +361,9 @@ const Feedback = () => {
                     </select>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+
+                  <div className="form-group">
+                    <label className="form-label">
                       {t('feedback.form.adminNotes')}
                     </label>
                     <textarea
@@ -349,38 +371,40 @@ const Feedback = () => {
                       onChange={(e) => setStatusUpdate({...statusUpdate, adminNotes: e.target.value})}
                       placeholder={t('feedback.form.adminNotesPlaceholder')}
                       rows={4}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="form-textarea"
                     />
                   </div>
 
+
                   {selectedFeedback.reviewedBy && (
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
+                    <div className="reviewer-grid">
+                      <div className="reviewer-field">
+                        <label className="reviewer-label">
                           {t('feedback.form.reviewedBy')}
                         </label>
-                        <p className="text-gray-900">{selectedFeedback.reviewedBy.username}</p>
+                        <p className="reviewer-value">{selectedFeedback.reviewedBy.username}</p>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">
+                      <div className="reviewer-field">
+                        <label className="reviewer-label">
                           {t('feedback.form.reviewedAt')}
                         </label>
-                        <p className="text-gray-900">{formatDate(selectedFeedback.reviewedAt)}</p>
+                        <p className="reviewer-value">{formatDate(selectedFeedback.reviewedAt)}</p>
                       </div>
                     </div>
                   )}
 
-                  <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+
+                  <div className="modal-footer">
                     <button
                       type="button"
                       onClick={() => setShowModal(false)}
-                      className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200"
+                      className="btn-cancel"
                     >
                       {t('feedback.form.cancel')}
                     </button>
                     <button
                       type="submit"
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200"
+                      className="btn-submit"
                     >
                       <Save size={16} />
                       {t('feedback.form.updateStatus')}
@@ -395,5 +419,6 @@ const Feedback = () => {
     </div>
   );
 };
+
 
 export default Feedback;

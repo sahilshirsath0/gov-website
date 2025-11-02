@@ -14,6 +14,7 @@ import {
   ZoomIn
 } from 'lucide-react';
 import { adminAPI } from '../../services/api';
+import './Gallery.css';
 
 const Gallery = () => {
   const { t } = useTranslation('admin');
@@ -33,6 +34,11 @@ const Gallery = () => {
   const [previewUrl, setPreviewUrl] = useState('');
   const [submitError, setSubmitError] = useState('');
 
+  // ADD: Single click prevention and upload states
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
   useEffect(() => {
     fetchGallery();
   }, []);
@@ -49,17 +55,47 @@ const Gallery = () => {
     }
   };
 
+  // Image compression function
+  const compressImage = (file, maxWidth = 1200, quality = 0.8) => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        let { width, height } = img;
+        
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(resolve, 'image/jpeg', quality);
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
   const handleCreate = () => {
+    if (isSubmitting) return;
+    
     setModalType('create');
     setSelectedItem(null);
     setFormData({ name: '', description: '' });
     setSelectedFile(null);
     setPreviewUrl('');
     setSubmitError('');
+    setUploadProgress(0);
     setShowModal(true);
   };
 
   const handleEdit = (item) => {
+    if (isSubmitting) return;
+    
     setModalType('edit');
     setSelectedItem(item);
     setFormData({
@@ -84,112 +120,145 @@ const Gallery = () => {
   };
 
   const handleDelete = async (id) => {
+    if (isDeleting === id) return;
+    
     if (window.confirm(t('gallery.confirmDelete'))) {
       try {
+        setIsDeleting(id);
         await adminAPI.deleteGalleryItem(id);
         fetchGallery();
       } catch (error) {
         console.error('Error deleting gallery item:', error);
+      } finally {
+        setIsDeleting(null);
       }
     }
   };
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setSubmitError('');
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    
+    if (isSubmitting) return;
+    
+    setSubmitError('');
+    setUploadProgress(0);
 
-  if (modalType === 'create' && !selectedFile) {
-    setSubmitError('Please select an image file');
-    return;
-  }
-
-  if (!formData.name.trim()) {
-    setSubmitError('Please enter a name for the gallery item');
-    return;
-  }
-
-  try {
-    if (modalType === 'create') {
-      // Convert file to base64
-      const base64Data = await convertFileToBase64(selectedFile);
-      
-      const submitData = {
-        name: formData.name.trim(),
-        description: formData.description?.trim() || '',
-        imageData: base64Data,
-        contentType: selectedFile.type,
-        filename: selectedFile.name,
-        size: selectedFile.size
-      };
-
-      console.log('Submitting gallery item with base64 data');
-      await adminAPI.createGalleryItem(submitData);
-    } else {
-      await adminAPI.updateGalleryItem(selectedItem._id, {
-        name: formData.name.trim(),
-        description: formData.description.trim(),
-        isActive: true
-      });
+    if (modalType === 'create' && !selectedFile) {
+      setSubmitError('Please select an image file');
+      return;
     }
 
-    setShowModal(false);
-    fetchGallery();
-    setFormData({ name: '', description: '' });
-    setSelectedFile(null);
-    setPreviewUrl('');
-  } catch (error) {
-    console.error('Error submitting gallery item:', error);
-    setSubmitError(error.response?.data?.message || 'Error submitting gallery item');
-  }
-};
+    if (!formData.name.trim()) {
+      setSubmitError('Please enter a name for the gallery item');
+      return;
+    }
 
-// Add this helper function to convert file to base64
-const convertFileToBase64 = (file) => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = error => reject(error);
-  });
-};
+    try {
+      setIsSubmitting(true);
 
+      if (modalType === 'create') {
+        // Step 1: Compress image (25% progress)
+        setUploadProgress(25);
+        console.log('Compressing image...');
+        const compressedFile = await compressImage(selectedFile);
+        
+        // Step 2: Convert to base64 (50% progress)
+        setUploadProgress(50);
+        const base64Data = await convertFileToBase64(compressedFile);
+        
+        const submitData = {
+          name: formData.name.trim(),
+          description: formData.description?.trim() || '',
+          imageData: base64Data,
+          contentType: 'image/jpeg',
+          filename: selectedFile.name,
+          size: compressedFile.size
+        };
 
+        // Step 3: Upload (75% progress)
+        setUploadProgress(75);
+        console.log('Uploading compressed gallery item, size:', compressedFile.size);
+        await adminAPI.createGalleryItem(submitData);
+        setUploadProgress(100);
+      } else {
+        await adminAPI.updateGalleryItem(selectedItem._id, {
+          name: formData.name.trim(),
+          description: formData.description.trim(),
+          isActive: true
+        });
+      }
+
+      // Success delay for user feedback
+      setTimeout(() => {
+        setShowModal(false);
+        setIsSubmitting(false);
+        setUploadProgress(0);
+        fetchGallery();
+        setFormData({ name: '', description: '' });
+        setSelectedFile(null);
+        setPreviewUrl('');
+      }, 500);
+
+    } catch (error) {
+      console.error('Error submitting gallery item:', error);
+      setIsSubmitting(false);
+      setUploadProgress(0);
+      
+      if (error.code === 'ECONNABORTED') {
+        setSubmitError('Upload timeout. Please try with a smaller image or check your internet connection.');
+      } else {
+        setSubmitError(error.response?.data?.message || 'Error submitting gallery item');
+      }
+    }
+  };
+
+  const convertFileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = error => reject(error);
+    });
+  };
 
   const handleFileChange = (e) => {
-  const file = e.target.files[0];
-  console.log('Selected file:', file); // Debug log
-  
-  if (file) {
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      setSubmitError('Please select a valid image file');
-      return;
-    }
+    const file = e.target.files[0];
+    console.log('Selected file:', file);
     
-    // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      setSubmitError('File size must be less than 10MB');
-      return;
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        setSubmitError('Please select a valid image file');
+        return;
+      }
+      
+      if (file.size > 10 * 1024 * 1024) {
+        setSubmitError('File size must be less than 10MB');
+        return;
+      }
+
+      setSelectedFile(file);
+      setSubmitError('');
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+      
+      console.log('File set in state:', file);
     }
-
-    setSelectedFile(file); // Make sure this is setting the actual File object
-    setSubmitError('');
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    
-    console.log('File set in state:', file); // Debug log
-  }
-};
-
+  };
 
   const removeFile = () => {
+    if (isSubmitting) return;
+    
     setSelectedFile(null);
     setPreviewUrl('');
-    // Reset the file input
     const fileInput = document.querySelector('input[type="file"]');
     if (fileInput) {
       fileInput.value = '';
     }
+  };
+
+  const handleCloseModal = () => {
+    if (isSubmitting) return;
+    setShowModal(false);
   };
 
   const filteredGallery = gallery.filter(item => {
@@ -211,37 +280,37 @@ const convertFileToBase64 = (file) => {
     });
   };
 
-const getImageUrl = (item) => {
-  if (item.image && item.image.data) {
-    return item.image.data; // This is already a data URL (data:image/jpeg;base64,...)
-  }
-  return null;
-};
-
+  const getImageUrl = (item) => {
+    if (item.image && item.image.data) {
+      return item.image.data;
+    }
+    return null;
+  };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="loading-container">
+        <div className="loading-spinner"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="gallery-container">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="gallery-header">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="page-title">
             {t('gallery.title')}
           </h1>
-          <p className="text-gray-600">
+          <p className="page-subtitle">
             {t('gallery.subtitle')}
           </p>
         </div>
         <button
           onClick={handleCreate}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200"
+          className="btn-create"
+          disabled={isSubmitting}
         >
           <Plus size={20} />
           {t('gallery.create')}
@@ -249,25 +318,25 @@ const getImageUrl = (item) => {
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg border border-gray-200">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+      <div className="filters-card">
+        <div className="filters-container">
+          <div className="search-wrapper">
+            <Search className="search-icon" size={20} />
             <input
               type="text"
               placeholder={t('gallery.search')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="search-input"
             />
           </div>
 
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+          <div className="filter-wrapper">
+            <Filter className="filter-icon" size={20} />
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="filter-select"
             >
               <option value="all">{t('gallery.filter.all')}</option>
               <option value="active">{t('gallery.filter.active')}</option>
@@ -278,21 +347,22 @@ const getImageUrl = (item) => {
       </div>
 
       {/* Gallery Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+      <div className="gallery-grid">
         {filteredGallery.length === 0 ? (
-          <div className="col-span-full text-center py-12">
-            <div className="text-gray-400 mb-4">
-              <ImageIcon size={48} className="mx-auto" />
+          <div className="empty-state">
+            <div className="empty-icon">
+              <ImageIcon size={48} />
             </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
+            <h3 className="empty-title">
               {t('gallery.empty.title')}
             </h3>
-            <p className="text-gray-600 mb-4">
+            <p className="empty-description">
               {t('gallery.empty.description')}
             </p>
             <button
               onClick={handleCreate}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg inline-flex items-center gap-2"
+              className="btn-create-empty"
+              disabled={isSubmitting}
             >
               <Plus size={20} />
               {t('gallery.create')}
@@ -300,76 +370,80 @@ const getImageUrl = (item) => {
           </div>
         ) : (
           filteredGallery.map((item) => (
-            <div key={item._id} className="bg-white rounded-lg border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow duration-200">
+            <div key={item._id} className="gallery-card">
               {/* Image */}
-              <div className="relative aspect-square bg-gray-100">
+              <div className="gallery-image-container">
                 {getImageUrl(item) ? (
                   <img
                     src={getImageUrl(item)}
                     alt={item.name}
-                    className="w-full h-full object-cover"
+                    className="gallery-image"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-400">
+                  <div className="gallery-image-placeholder">
                     <ImageIcon size={48} />
                   </div>
                 )}
                 
                 {/* Image Overlay */}
-                <div className="absolute inset-0 bg-black bg-opacity-0 hover:bg-opacity-50 transition-all duration-200 flex items-center justify-center opacity-0 hover:opacity-100">
+                <div className="gallery-image-overlay">
                   <button
                     onClick={() => handleImageView(item)}
-                    className="bg-white text-gray-900 p-2 rounded-full hover:bg-gray-100 transition-colors duration-200"
+                    className="zoom-btn"
+                    disabled={isSubmitting}
                   >
                     <ZoomIn size={20} />
                   </button>
                 </div>
 
                 {/* Status Badge */}
-                <div className="absolute top-2 right-2">
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    item.isActive 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-red-100 text-red-800'
-                  }`}>
+                <div className="gallery-status-badge">
+                  <span className={`status-badge ${item.isActive ? 'status-active' : 'status-inactive'}`}>
                     {item.isActive ? t('gallery.status.active') : t('gallery.status.inactive')}
                   </span>
                 </div>
               </div>
 
               {/* Content */}
-              <div className="p-4">
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-medium text-gray-900 truncate">{item.name}</h3>
-                  <div className="flex items-center gap-1 ml-2">
+              <div className="gallery-card-body">
+                <div className="gallery-card-header">
+                  <h3 className="gallery-title">{item.name}</h3>
+                  <div className="gallery-actions">
                     <button
                       onClick={() => handleView(item)}
-                      className="p-1 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors duration-200"
+                      className="action-btn action-btn-view"
+                      disabled={isSubmitting}
                     >
                       <Eye size={14} />
                     </button>
                     <button
                       onClick={() => handleEdit(item)}
-                      className="p-1 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded transition-colors duration-200"
+                      className="action-btn action-btn-edit"
+                      disabled={isSubmitting}
                     >
                       <Edit2 size={14} />
                     </button>
                     <button
                       onClick={() => handleDelete(item._id)}
-                      className="p-1 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition-colors duration-200"
+                      className="action-btn action-btn-delete"
+                      disabled={isDeleting === item._id}
                     >
-                      <Trash2 size={14} />
+                      {isDeleting === item._id ? (
+                        <div className="delete-spinner"></div>
+                      ) : (
+                        <Trash2 size={14} />
+                      )}
                     </button>
                   </div>
                 </div>
 
                 {item.description && (
-                  <p className="text-gray-600 text-sm mb-3 line-clamp-2">
+                  <p className="gallery-description">
                     {item.description}
                   </p>
                 )}
 
-                <div className="text-xs text-gray-500">
+                <div className="gallery-footer">
                   <p>{t('gallery.createdBy')}: {item.createdBy?.username}</p>
                   <p>{formatDate(item.createdAt)}</p>
                 </div>
@@ -379,76 +453,75 @@ const getImageUrl = (item) => {
         )}
       </div>
 
-      {/* Create/Edit Modal */}
+      {/* FIXED: Scrollable Create/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">
+        <div className="modal-overlay">
+          <div className="modal-container">
+            {/* Fixed Header */}
+            <div className="modal-header">
+              <h2 className="modal-title">
                 {modalType === 'create' && t('gallery.modal.create')}
                 {modalType === 'edit' && t('gallery.modal.edit')}
                 {modalType === 'view' && t('gallery.modal.view')}
               </h2>
               <button
-                onClick={() => setShowModal(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+                onClick={handleCloseModal}
+                className="modal-close-btn"
+                disabled={isSubmitting}
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-6">
+            {/* Scrollable Body */}
+            <div className="modal-body-scrollable">
               {modalType === 'view' ? (
-                <div className="space-y-6">
+                <div className="view-content">
                   {getImageUrl(selectedItem) && (
-                    <div className="text-center">
+                    <div className="view-image-container">
                       <img
                         src={getImageUrl(selectedItem)}
                         alt={selectedItem?.name}
-                        className="max-w-full h-64 object-contain mx-auto rounded-lg border border-gray-200"
+                        className="view-image"
                       />
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="view-fields">
+                    <div className="view-field">
+                      <label className="view-label">
                         {t('gallery.form.name')}
                       </label>
-                      <p className="text-gray-900 bg-gray-50 p-3 rounded-lg">
+                      <p className="view-value-box">
                         {selectedItem?.name}
                       </p>
                     </div>
 
                     {selectedItem?.description && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <div className="view-field">
+                        <label className="view-label">
                           {t('gallery.form.description')}
                         </label>
-                        <p className="text-gray-900 bg-gray-50 p-3 rounded-lg whitespace-pre-wrap">
+                        <p className="view-value-box view-value-description">
                           {selectedItem.description}
                         </p>
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <div className="view-grid">
+                      <div className="view-field">
+                        <label className="view-label">
                           {t('gallery.form.status')}
                         </label>
-                        <span className={`px-3 py-1 text-sm font-medium rounded-full ${
-                          selectedItem?.isActive 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-red-100 text-red-800'
-                        }`}>
+                        <span className={`status-badge-large ${selectedItem?.isActive ? 'status-active' : 'status-inactive'}`}>
                           {selectedItem?.isActive ? t('gallery.status.active') : t('gallery.status.inactive')}
                         </span>
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                      <div className="view-field">
+                        <label className="view-label">
                           {t('gallery.form.created')}
                         </label>
-                        <p className="text-sm text-gray-900">
+                        <p className="view-value">
                           {formatDate(selectedItem?.createdAt)}
                         </p>
                       </div>
@@ -456,16 +529,15 @@ const getImageUrl = (item) => {
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-6">
-                  {/* Error Message */}
+                <form onSubmit={handleSubmit} className="modal-form">
                   {submitError && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                    <div className="error-message">
                       {submitError}
                     </div>
                   )}
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="form-group">
+                    <label className="form-label">
                       {t('gallery.form.name')} *
                     </label>
                     <input
@@ -473,12 +545,13 @@ const getImageUrl = (item) => {
                       value={formData.name}
                       onChange={(e) => setFormData({...formData, name: e.target.value})}
                       placeholder={t('gallery.form.namePlaceholder')}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="form-input"
+                      disabled={isSubmitting}
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="form-group">
+                    <label className="form-label">
                       {t('gallery.form.description')}
                     </label>
                     <textarea
@@ -486,45 +559,48 @@ const getImageUrl = (item) => {
                       onChange={(e) => setFormData({...formData, description: e.target.value})}
                       placeholder={t('gallery.form.descriptionPlaceholder')}
                       rows={3}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="form-textarea"
+                      disabled={isSubmitting}
                     />
                   </div>
 
                   {modalType === 'create' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <div className="form-group">
+                      <label className="form-label">
                         {t('gallery.form.image')} *
                       </label>
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-center w-full">
-                          <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors duration-200">
-                            <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                              <Upload className="w-8 h-8 mb-3 text-gray-400" />
-                              <p className="mb-2 text-sm text-gray-500">
-                                <span className="font-semibold">{t('gallery.form.clickToUpload')}</span>
+                      <div className="file-upload-section">
+                        <div className="file-upload-wrapper">
+                          <label className={`file-upload-label ${isSubmitting ? 'disabled' : ''}`}>
+                            <div className="file-upload-content">
+                              <Upload className="upload-icon" />
+                              <p className="upload-text">
+                                <span className="upload-text-highlight">{t('gallery.form.clickToUpload')}</span>
                               </p>
-                              <p className="text-xs text-gray-500">PNG, JPG, GIF (MAX. 10MB)</p>
+                              <p className="upload-hint">PNG, JPG, GIF (MAX. 10MB)</p>
                             </div>
                             <input
                               type="file"
                               onChange={handleFileChange}
                               accept="image/*"
-                              className="hidden"
+                              className="file-input"
+                              disabled={isSubmitting}
                             />
                           </label>
                         </div>
 
                         {previewUrl && (
-                          <div className="relative">
+                          <div className="preview-container">
                             <img
                               src={previewUrl}
                               alt="Preview"
-                              className="w-full h-32 object-cover rounded-lg border border-gray-200"
+                              className="preview-image"
                             />
                             <button
                               type="button"
                               onClick={removeFile}
-                              className="absolute top-2 right-2 bg-red-600 text-white p-1 rounded-full hover:bg-red-700 transition-colors duration-200"
+                              className="preview-remove-btn"
+                              disabled={isSubmitting}
                             >
                               <X size={16} />
                             </button>
@@ -533,37 +609,52 @@ const getImageUrl = (item) => {
                       </div>
                     </div>
                   )}
-
-                  <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200">
-                    <button
-                      type="button"
-                      onClick={() => setShowModal(false)}
-                      className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200"
-                    >
-                      {t('gallery.form.cancel')}
-                    </button>
-                    <button
-                      type="submit"
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200"
-                    >
-                      <Save size={16} />
-                      {modalType === 'create' ? t('gallery.form.create') : t('gallery.form.update')}
-                    </button>
-                  </div>
                 </form>
               )}
             </div>
+
+            {/* Fixed Footer - Only for non-view modals */}
+            {modalType !== 'view' && (
+              <div className="modal-footer-fixed">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="btn-cancel"
+                  disabled={isSubmitting}
+                >
+                  {t('gallery.form.cancel')}
+                </button>
+                <button
+                  type="submit"
+                  onClick={handleSubmit}
+                  className="btn-submit"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="submit-spinner"></div>
+                      {modalType === 'create' ? `Uploading... ${uploadProgress}%` : 'Updating...'}
+                    </>
+                  ) : (
+                    <>
+                      <Save size={16} />
+                      {modalType === 'create' ? t('gallery.form.create') : t('gallery.form.update')}
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* Image View Modal */}
       {showImageModal && selectedItem && (
-        <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center p-4 z-50">
-          <div className="relative max-w-4xl max-h-full">
+        <div className="image-modal-overlay">
+          <div className="image-modal-container">
             <button
               onClick={() => setShowImageModal(false)}
-              className="absolute -top-12 right-0 text-white hover:text-gray-300 transition-colors duration-200"
+              className="image-modal-close"
             >
               <X size={32} />
             </button>
@@ -572,14 +663,14 @@ const getImageUrl = (item) => {
               <img
                 src={getImageUrl(selectedItem)}
                 alt={selectedItem.name}
-                className="max-w-full max-h-full object-contain"
+                className="image-modal-img"
               />
             )}
             
-            <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-4">
-              <h3 className="text-lg font-medium">{selectedItem.name}</h3>
+            <div className="image-modal-info">
+              <h3 className="image-modal-title">{selectedItem.name}</h3>
               {selectedItem.description && (
-                <p className="text-sm text-gray-300 mt-1">{selectedItem.description}</p>
+                <p className="image-modal-description">{selectedItem.description}</p>
               )}
             </div>
           </div>

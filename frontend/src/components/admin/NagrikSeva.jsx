@@ -19,9 +19,11 @@ import {
   CreditCard,
   CheckCircle,
   XCircle,
-  Clock
+  Clock,
+  Trash2
 } from 'lucide-react';
 import { adminAPI } from '../../services/api';
+import './NagrikSeva.css';
 
 const NagrikSeva = () => {
   const { t } = useTranslation('admin');
@@ -37,9 +39,40 @@ const NagrikSeva = () => {
   const [previewUrl, setPreviewUrl] = useState('');
   const [submitError, setSubmitError] = useState('');
 
+  // ADD: Single click prevention and upload states
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(null);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
   useEffect(() => {
     fetchNagrikSevaData();
   }, []);
+
+  // Image compression function
+  const compressImage = (file, maxWidth = 1200, quality = 0.8) => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        let { width, height } = img;
+        
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(resolve, 'image/jpeg', quality);
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  };
 
   const fetchNagrikSevaData = async () => {
     try {
@@ -58,9 +91,12 @@ const NagrikSeva = () => {
   };
 
   const handleImageUpdate = () => {
+    if (isSubmitting) return;
+    
     setSelectedFile(null);
     setPreviewUrl('');
     setSubmitError('');
+    setUploadProgress(0);
     setShowImageModal(true);
   };
 
@@ -93,7 +129,11 @@ const NagrikSeva = () => {
 
   const handleImageSubmit = async (e) => {
     e.preventDefault();
+    
+    if (isSubmitting) return;
+    
     setSubmitError('');
+    setUploadProgress(0);
 
     if (!selectedFile) {
       setSubmitError('Please select an image file');
@@ -101,22 +141,49 @@ const NagrikSeva = () => {
     }
 
     try {
-      const base64Data = await convertFileToBase64(selectedFile);
+      setIsSubmitting(true);
+
+      // Step 1: Compress image (25% progress)
+      setUploadProgress(25);
+      console.log('Compressing image...');
+      const compressedFile = await compressImage(selectedFile);
+      
+      // Step 2: Convert to base64 (50% progress)
+      setUploadProgress(50);
+      const base64Data = await convertFileToBase64(compressedFile);
+      
       const submitData = {
         imageData: base64Data,
-        contentType: selectedFile.type,
+        contentType: 'image/jpeg',
         filename: selectedFile.name,
-        size: selectedFile.size
+        size: compressedFile.size
       };
 
+      // Step 3: Upload (75% progress)
+      setUploadProgress(75);
       await adminAPI.updateNagrikSevaHeader(submitData);
-      setShowImageModal(false);
-      fetchNagrikSevaData();
-      setSelectedFile(null);
-      setPreviewUrl('');
+      setUploadProgress(100);
+      
+      // Success delay for user feedback
+      setTimeout(() => {
+        setShowImageModal(false);
+        setIsSubmitting(false);
+        setUploadProgress(0);
+        fetchNagrikSevaData();
+        setSelectedFile(null);
+        setPreviewUrl('');
+      }, 500);
+
     } catch (error) {
       console.error('Error updating header image:', error);
-      setSubmitError('Error updating image');
+      setIsSubmitting(false);
+      setUploadProgress(0);
+      
+      if (error.code === 'ECONNABORTED') {
+        setSubmitError('Upload timeout. Please try with a smaller image or check your internet connection.');
+      } else {
+        setSubmitError('Error updating image');
+      }
     }
   };
 
@@ -126,13 +193,61 @@ const NagrikSeva = () => {
   };
 
   const handleStatusUpdate = async (applicationId, newStatus) => {
+    if (isUpdatingStatus === applicationId) return;
+    
     try {
+      setIsUpdatingStatus(applicationId);
       await adminAPI.updateApplicationStatus(applicationId, { status: newStatus });
       fetchNagrikSevaData();
       setShowApplicationModal(false);
     } catch (error) {
       console.error('Error updating status:', error);
+    } finally {
+      setIsUpdatingStatus(null);
     }
+  };
+
+  const handleDeleteApplication = async (applicationId) => {
+    if (isDeleting === applicationId) return;
+    
+    if (window.confirm(t('nagrikSeva.applications.confirmDelete'))) {
+      try {
+        setIsDeleting(applicationId);
+        await adminAPI.deleteNagrikSevaApplication(applicationId);
+        fetchNagrikSevaData();
+      } catch (error) {
+        console.error('Error deleting application:', error);
+      } finally {
+        setIsDeleting(null);
+      }
+    }
+  };
+
+  const handleDeleteHeader = async () => {
+    if (isDeleting === 'header') return;
+    
+    if (window.confirm(t('nagrikSeva.headerImage.confirmDelete'))) {
+      try {
+        setIsDeleting('header');
+        await adminAPI.deleteNagrikSevaHeader();
+        fetchNagrikSevaData();
+      } catch (error) {
+        console.error('Error deleting header:', error);
+      } finally {
+        setIsDeleting(null);
+      }
+    }
+  };
+
+  const handleCloseImageModal = () => {
+    if (isSubmitting) return;
+    setShowImageModal(false);
+  };
+
+  const removeFile = () => {
+    if (isSubmitting) return;
+    setSelectedFile(null);
+    setPreviewUrl('');
   };
 
   const filteredApplications = applications.filter(app => {
@@ -154,22 +269,22 @@ const NagrikSeva = () => {
   const getStatusIcon = (status) => {
     switch (status) {
       case 'approved':
-        return <CheckCircle className="h-4 w-4" />;
+        return <CheckCircle className="icon-sm" />;
       case 'rejected':
-        return <XCircle className="h-4 w-4" />;
+        return <XCircle className="icon-sm" />;
       default:
-        return <Clock className="h-4 w-4" />;
+        return <Clock className="icon-sm" />;
     }
   };
 
   const getStatusColor = (status) => {
     switch (status) {
       case 'approved':
-        return 'from-green-500 to-emerald-500';
+        return 'status-approved';
       case 'rejected':
-        return 'from-red-500 to-pink-500';
+        return 'status-rejected';
       default:
-        return 'from-yellow-500 to-orange-500';
+        return 'status-pending';
     }
   };
 
@@ -186,36 +301,33 @@ const NagrikSeva = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="relative">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-200"></div>
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-blue-600 absolute top-0 left-0"></div>
+      <div className="loading-container">
+        <div className="loading-spinner-wrapper">
+          <div className="loading-spinner-outer"></div>
+          <div className="loading-spinner-inner"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="nagrik-seva-container">
       {/* Header Section */}
-      <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 rounded-2xl shadow-xl p-8 text-white">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="bg-white/20 backdrop-blur-sm p-3 rounded-xl">
-                <Users className="h-8 w-8" />
+      <div className="page-header">
+        <div className="page-header-content">
+          <div className="page-header-title-section">
+            <div className="header-icon-wrapper">
+              <div className="header-icon-container">
+                <Users className="header-icon" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold tracking-tight">{t('nagrikSeva.title')}</h1>
-                <p className="text-blue-100 mt-1 text-sm">{t('nagrikSeva.subtitle')}</p>
+                <h1 className="page-title">{t('nagrikSeva.title')}</h1>
+                <p className="page-subtitle">{t('nagrikSeva.subtitle')}</p>
               </div>
             </div>
-            <div className="flex items-center gap-4 text-sm">
-              <div className="bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-lg">
-                <span className="font-semibold">{applications.length}</span> {t('nagrikSeva.applications.title')}
-              </div>
-              <div className="bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-lg">
-                <span className="font-semibold">{applications.filter(app => app.status === 'pending').length}</span> {t('nagrikSeva.applications.status.pending')}
+            <div className="stats-container">
+              <div className="stat-badge">
+                <span className="stat-value">{applications.length}</span> {t('nagrikSeva.applications.title')}
               </div>
             </div>
           </div>
@@ -223,35 +335,52 @@ const NagrikSeva = () => {
       </div>
 
       {/* Header Image Section */}
-      <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-6 py-3 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold text-gray-700 flex items-center gap-2">
+      <div className="content-card">
+        <div className="card-header">
+          <div className="card-header-content">
+            <h3 className="card-title">
               <FileText size={18} />
               {t('nagrikSeva.headerImage.title')}
             </h3>
-            <button
-              onClick={handleImageUpdate}
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-semibold transition-all duration-300"
-            >
-              <Edit2 size={16} />
-              {t('nagrikSeva.headerImage.update')}
-            </button>
+            <div className="card-actions">
+              <button
+                onClick={handleImageUpdate}
+                className="btn btn-primary"
+                disabled={isSubmitting || isDeleting === 'header'}
+              >
+                <Edit2 size={16} />
+                {t('nagrikSeva.headerImage.update')}
+              </button>
+              {headerImage?.image?.data && (
+                <button
+                  onClick={handleDeleteHeader}
+                  className="btn btn-danger"
+                  disabled={isDeleting === 'header'}
+                >
+                  {isDeleting === 'header' ? (
+                    <div className="delete-spinner"></div>
+                  ) : (
+                    <Trash2 size={16} />
+                  )}
+                  {t('common.delete')}
+                </button>
+              )}
+            </div>
           </div>
         </div>
-        <div className="p-6">
-          <div className="relative aspect-[16/6] bg-gradient-to-br from-gray-100 to-blue-100 rounded-xl overflow-hidden">
+        <div className="card-body">
+          <div className="image-container">
             {headerImage?.image?.data ? (
               <img
                 src={headerImage.image.data}
                 alt="Nagrik Seva Header"
-                className="w-full h-full object-cover"
+                className="header-image"
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <div className="text-center">
-                  <FileText size={48} className="text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-500">{t('nagrikSeva.headerImage.noImage')}</p>
+              <div className="image-placeholder">
+                <div className="image-placeholder-content">
+                  <FileText size={48} className="placeholder-icon" />
+                  <p className="placeholder-text">{t('nagrikSeva.headerImage.noImage')}</p>
                 </div>
               </div>
             )}
@@ -260,105 +389,114 @@ const NagrikSeva = () => {
       </div>
 
       {/* Search & Filter */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-6 py-3 border-b border-gray-200">
-          <h3 className="font-semibold text-gray-700 flex items-center gap-2">
-            <Filter size={18} />
-            {t('nagrikSeva.applications.search')} & {t('common.filter')}
-          </h3>
-        </div>
-        <div className="p-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative group">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors duration-200" size={20} />
-              <input
-                type="text"
-                placeholder={t('nagrikSeva.applications.search')}
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3.5 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
-              />
-            </div>
-            
-            <div className="relative group w-full md:w-64">
-              <Filter className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors duration-200 pointer-events-none" size={20} />
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="w-full pl-12 pr-10 py-3.5 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 appearance-none cursor-pointer bg-gray-50 focus:bg-white font-medium"
-              >
-                <option value="all">{t('nagrikSeva.applications.filter.all')}</option>
-                <option value="pending">{t('nagrikSeva.applications.filter.pending')}</option>
-                <option value="approved">{t('nagrikSeva.applications.filter.approved')}</option>
-                <option value="rejected">{t('nagrikSeva.applications.filter.rejected')}</option>
-              </select>
-            </div>
+      <div className="content-card">
+        <div className="filters-container">
+          <div className="search-container">
+            <Search className="search-icon" size={20} />
+            <input
+              type="text"
+              placeholder={t('nagrikSeva.applications.search')}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="search-input"
+            />
+          </div>
+
+          <div className="filter-container">
+            <Filter className="filter-icon" size={20} />
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="filter-select"
+            >
+              <option value="all">{t('nagrikSeva.applications.filter.all')}</option>
+              <option value="pending">{t('nagrikSeva.applications.filter.pending')}</option>
+              <option value="approved">{t('nagrikSeva.applications.filter.approved')}</option>
+              <option value="rejected">{t('nagrikSeva.applications.filter.rejected')}</option>
+            </select>
           </div>
         </div>
       </div>
 
       {/* Applications Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="applications-grid">
         {filteredApplications.length === 0 ? (
-          <div className="col-span-full">
-            <div className="bg-white rounded-2xl shadow-lg border-2 border-dashed border-gray-300 p-16 text-center">
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Users size={48} className="text-blue-500" />
+          <div className="empty-state">
+            <div className="empty-state-content">
+              <div className="empty-state-icon">
+                <Users size={48} />
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-3">{t('nagrikSeva.applications.empty.title')}</h3>
-              <p className="text-gray-600 mb-6 max-w-md mx-auto">{t('nagrikSeva.applications.empty.description')}</p>
+              <h3 className="empty-state-title">{t('nagrikSeva.applications.empty.title')}</h3>
+              <p className="empty-state-description">{t('nagrikSeva.applications.empty.description')}</p>
             </div>
           </div>
         ) : (
           filteredApplications.map((application) => (
-            <div key={application._id} className="group bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2">
-              <div className="p-6">
+            <div key={application._id} className="application-card">
+              <div className="application-card-body">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-gradient-to-r from-blue-500 to-indigo-500 p-2 rounded-full">
-                      <User className="h-4 w-4 text-white" />
+                <div className="application-header">
+                  <div className="application-user">
+                    <div className="user-avatar">
+                      <User className="icon-sm" />
                     </div>
                     <div>
-                      <h3 className="font-bold text-gray-900">{application.firstName} {application.lastName}</h3>
-                      <p className="text-xs text-gray-500">{application.certificateHolderName}</p>
+                      <h3 className="user-name">{application.firstName} {application.lastName}</h3>
+                      <p className="user-subtitle">{application.certificateHolderName}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-bold rounded-full bg-gradient-to-r ${getStatusColor(application.status)} text-white`}>
-                      {getStatusIcon(application.status)}
-                      {getStatusText(application.status)}
-                    </span>
+                  <div className="application-actions">
                     <button
                       onClick={() => handleViewApplication(application)}
-                      className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all duration-200 transform hover:scale-110"
+                      className="btn-icon"
                       title={t('nagrikSeva.applications.viewDetails')}
+                      disabled={isSubmitting || isDeleting === application._id}
                     >
                       <Eye size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteApplication(application._id)}
+                      className="btn-icon btn-icon-danger"
+                      title={t('common.delete')}
+                      disabled={isDeleting === application._id}
+                    >
+                      {isDeleting === application._id ? (
+                        <div className="delete-spinner-small"></div>
+                      ) : (
+                        <Trash2 size={16} />
+                      )}
                     </button>
                   </div>
                 </div>
 
+                {/* Status Badge */}
+                <div className="status-container">
+                  <span className={`status-badge ${getStatusColor(application.status)}`}>
+                    {getStatusIcon(application.status)}
+                    {getStatusText(application.status)}
+                  </span>
+                </div>
+
                 {/* Details */}
-                <div className="space-y-3 mb-4">
-                  <div className="flex items-center gap-2 text-sm">
-                    <Phone className="h-4 w-4 text-gray-400" />
-                    <span className="text-gray-700">{application.whatsappNumber}</span>
+                <div className="application-details">
+                  <div className="detail-item">
+                    <Phone className="icon-sm detail-icon" />
+                    <span className="detail-text">{application.whatsappNumber}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Mail className="h-4 w-4 text-gray-400" />
-                    <span className="text-gray-700">{application.email}</span>
+                  <div className="detail-item">
+                    <Mail className="icon-sm detail-icon" />
+                    <span className="detail-text">{application.email}</span>
                   </div>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Calendar className="h-4 w-4 text-gray-400" />
-                    <span className="text-gray-700">DOB: {formatDate(application.dateOfBirth)}</span>
+                  <div className="detail-item">
+                    <Calendar className="icon-sm detail-icon" />
+                    <span className="detail-text">DOB: {formatDate(application.dateOfBirth)}</span>
                   </div>
                 </div>
 
                 {/* Footer */}
-                <div className="pt-4 border-t border-gray-100">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="bg-gradient-to-r from-green-50 to-emerald-50 text-green-700 px-2 py-1 rounded-md font-medium">
+                <div className="application-footer">
+                  <div className="application-meta">
+                    <span className="meta-badge">
                       {t('nagrikSeva.form.appliedOn')}: {formatDate(application.createdAt)}
                     </span>
                   </div>
@@ -369,214 +507,231 @@ const NagrikSeva = () => {
         )}
       </div>
 
-      {/* Image Update Modal */}
+      {/* FIXED: Scrollable Image Update Modal */}
       {showImageModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-5 text-white">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold flex items-center gap-3">
+        <div className="modal-overlay">
+          <div className="modal-container modal-md">
+            {/* Fixed Header */}
+            <div className="modal-header">
+              <div className="modal-header-content">
+                <h2 className="modal-title">
                   <Upload size={24} />
                   {t('nagrikSeva.headerImage.update')}
                 </h2>
                 <button
-                  onClick={() => setShowImageModal(false)}
-                  className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-all duration-200"
+                  onClick={handleCloseImageModal}
+                  className="modal-close-btn"
+                  disabled={isSubmitting}
                 >
                   <X size={24} />
                 </button>
               </div>
             </div>
 
-            <div className="p-6">
-              <form onSubmit={handleImageSubmit} className="space-y-6">
+            {/* Scrollable Body */}
+            <div className="modal-body-scrollable">
+              <form onSubmit={handleImageSubmit} className="modal-form">
                 {submitError && (
-                  <div className="bg-gradient-to-r from-red-50 to-pink-50 border-l-4 border-red-500 text-red-700 px-5 py-4 rounded-xl">
+                  <div className="error-message">
                     {submitError}
                   </div>
                 )}
 
-                <div className="space-y-4">
-                  <label className="block text-sm font-bold text-gray-700">
+                <div className="form-group">
+                  <label className="form-label">
                     {t('nagrikSeva.headerImage.title')} *
                   </label>
-                  <div className="flex items-center justify-center w-full">
-                    <label className="flex flex-col items-center justify-center w-full h-48 border-3 border-blue-300 border-dashed rounded-2xl cursor-pointer bg-gradient-to-br from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 transition-all duration-300">
-                      <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                        <Upload className="w-10 h-10 mb-3 text-blue-500" />
-                        <p className="mb-2 text-sm text-gray-700 font-semibold">
-                          <span className="text-blue-600">{t('common.messages.selectFile')}</span>
+                  <div className="file-upload-wrapper">
+                    <label className={`file-upload-label ${isSubmitting ? 'disabled' : ''}`}>
+                      <div className="file-upload-content">
+                        <Upload className="upload-icon" />
+                        <p className="upload-text">
+                          <span className="upload-text-highlight">{t('common.messages.selectFile')}</span>
                         </p>
-                        <p className="text-xs text-gray-500">PNG, JPG, GIF (MAX. 10MB)</p>
+                        <p className="upload-hint">PNG, JPG, GIF (MAX. 10MB)</p>
                       </div>
                       <input
                         type="file"
                         onChange={handleFileChange}
                         accept="image/*"
-                        className="hidden"
+                        className="file-input"
+                        disabled={isSubmitting}
                       />
                     </label>
                   </div>
 
                   {previewUrl && (
-                    <div className="relative">
+                    <div className="preview-container">
                       <img
                         src={previewUrl}
                         alt="Preview"
-                        className="w-full h-48 object-cover rounded-xl border-2 border-blue-200"
+                        className="preview-image"
                       />
                       <button
                         type="button"
-                        onClick={() => {
-                          setSelectedFile(null);
-                          setPreviewUrl('');
-                        }}
-                        className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-full hover:bg-red-700"
+                        onClick={removeFile}
+                        className="preview-remove-btn"
+                        disabled={isSubmitting}
                       >
                         <X size={16} />
                       </button>
                     </div>
                   )}
                 </div>
+              </form>
+            </div>
 
-                <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200">
-                  <button
-                    type="button"
-                    onClick={() => setShowImageModal(false)}
-                    className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 border-2 border-gray-300 rounded-xl font-semibold transition-all duration-200"
-                  >
-                    {t('common.cancel')}
-                  </button>
-                  <button
-                    type="submit"
-                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-semibold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-                  >
+            {/* Fixed Footer */}
+            <div className="modal-footer-fixed">
+              <button
+                type="button"
+                onClick={handleCloseImageModal}
+                className="btn btn-secondary"
+                disabled={isSubmitting}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="submit"
+                onClick={handleImageSubmit}
+                className="btn btn-primary"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <>
+                    <div className="submit-spinner"></div>
+                    Uploading... {uploadProgress}%
+                  </>
+                ) : (
+                  <>
                     <Save size={18} />
                     {t('nagrikSeva.headerImage.update')}
-                  </button>
-                </div>
-              </form>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Application Details Modal */}
+      {/* FIXED: Scrollable Application Details Modal */}
       {showApplicationModal && selectedApplication && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-5 text-white">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold flex items-center gap-3">
+        <div className="modal-overlay">
+          <div className="modal-container modal-lg">
+            {/* Fixed Header */}
+            <div className="modal-header">
+              <div className="modal-header-content">
+                <h2 className="modal-title">
                   <User size={24} />
                   {t('nagrikSeva.applications.viewDetails')}
                 </h2>
                 <button
                   onClick={() => setShowApplicationModal(false)}
-                  className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-all duration-200"
+                  className="modal-close-btn"
                 >
                   <X size={24} />
                 </button>
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Scrollable Body */}
+            <div className="modal-body-scrollable">
+              <div className="details-grid">
                 {/* Personal Information */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-bold text-gray-900 border-b border-gray-200 pb-2">{t('nagrikSeva.form.personalInfo')}</h3>
+                <div className="details-section">
+                  <h3 className="section-title">{t('nagrikSeva.form.personalInfo')}</h3>
                   
-                  <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-4 rounded-xl">
-                    <label className="block text-sm font-bold text-gray-700 mb-1">{t('nagrikSeva.form.fullName')}</label>
-                    <p className="text-gray-900">{selectedApplication.firstName} {selectedApplication.middleName} {selectedApplication.lastName}</p>
+                  <div className="info-card info-card-blue">
+                    <label className="info-label">{t('nagrikSeva.form.fullName')}</label>
+                    <p className="info-value">{selectedApplication.firstName} {selectedApplication.middleName} {selectedApplication.lastName}</p>
                   </div>
 
-                  <div className="bg-gradient-to-br from-green-50 to-emerald-50 p-4 rounded-xl">
-                    <label className="block text-sm font-bold text-gray-700 mb-1">{t('nagrikSeva.form.whatsappNumber')}</label>
-                    <p className="text-gray-900">{selectedApplication.whatsappNumber}</p>
+                  <div className="info-card info-card-green">
+                    <label className="info-label">{t('nagrikSeva.form.whatsappNumber')}</label>
+                    <p className="info-value">{selectedApplication.whatsappNumber}</p>
                   </div>
 
-                  <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-4 rounded-xl">
-                    <label className="block text-sm font-bold text-gray-700 mb-1">{t('nagrikSeva.form.email')}</label>
-                    <p className="text-gray-900">{selectedApplication.email}</p>
+                  <div className="info-card info-card-purple">
+                    <label className="info-label">{t('nagrikSeva.form.email')}</label>
+                    <p className="info-value">{selectedApplication.email}</p>
                   </div>
 
-                  <div className="bg-gradient-to-br from-yellow-50 to-orange-50 p-4 rounded-xl">
-                    <label className="block text-sm font-bold text-gray-700 mb-1">{t('nagrikSeva.form.aadhaarNumber')}</label>
-                    <p className="text-gray-900">{selectedApplication.aadhaarNumber}</p>
+                  <div className="info-card info-card-yellow">
+                    <label className="info-label">{t('nagrikSeva.form.aadhaarNumber')}</label>
+                    <p className="info-value">{selectedApplication.aadhaarNumber}</p>
                   </div>
                 </div>
 
                 {/* Certificate & Dates */}
-                <div className="space-y-4">
-                  <h3 className="text-lg font-bold text-gray-900 border-b border-gray-200 pb-2">{t('nagrikSeva.form.certificateInfo')}</h3>
+                <div className="details-section">
+                  <h3 className="section-title">{t('nagrikSeva.form.certificateInfo')}</h3>
                   
-                  <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-4 rounded-xl">
-                    <label className="block text-sm font-bold text-gray-700 mb-1">{t('nagrikSeva.form.certificateHolderName')}</label>
-                    <p className="text-gray-900">{selectedApplication.certificateHolderName}</p>
+                  <div className="info-card info-card-indigo">
+                    <label className="info-label">{t('nagrikSeva.form.certificateHolderName')}</label>
+                    <p className="info-value">{selectedApplication.certificateHolderName}</p>
                   </div>
 
-                  <div className="bg-gradient-to-br from-teal-50 to-cyan-50 p-4 rounded-xl">
-                    <label className="block text-sm font-bold text-gray-700 mb-1">{t('nagrikSeva.form.dateOfBirth')}</label>
-                    <p className="text-gray-900">{formatDate(selectedApplication.dateOfBirth)}</p>
+                  <div className="info-card info-card-teal">
+                    <label className="info-label">{t('nagrikSeva.form.dateOfBirth')}</label>
+                    <p className="info-value">{formatDate(selectedApplication.dateOfBirth)}</p>
                   </div>
 
                   {selectedApplication.dateOfRegistration && (
-                    <div className="bg-gradient-to-br from-rose-50 to-pink-50 p-4 rounded-xl">
-                      <label className="block text-sm font-bold text-gray-700 mb-1">{t('nagrikSeva.form.dateOfRegistration')}</label>
-                      <p className="text-gray-900">{formatDate(selectedApplication.dateOfRegistration)}</p>
+                    <div className="info-card info-card-rose">
+                      <label className="info-label">{t('nagrikSeva.form.dateOfRegistration')}</label>
+                      <p className="info-value">{formatDate(selectedApplication.dateOfRegistration)}</p>
                     </div>
                   )}
-
-                  <div className="bg-gradient-to-br from-gray-50 to-blue-50 p-4 rounded-xl">
-                    <label className="block text-sm font-bold text-gray-700 mb-1">{t('nagrikSeva.form.applicationStatus')}</label>
-                    <span className={`inline-flex items-center gap-2 px-3 py-1 text-sm font-bold rounded-lg bg-gradient-to-r ${getStatusColor(selectedApplication.status)} text-white`}>
-                      {getStatusIcon(selectedApplication.status)}
-                      {getStatusText(selectedApplication.status).toUpperCase()}
-                    </span>
-                  </div>
                 </div>
               </div>
 
               {/* Payment Screenshot */}
               {selectedApplication.paymentScreenshot?.data && (
-                <div className="mt-6">
-                  <h3 className="text-lg font-bold text-gray-900 border-b border-gray-200 pb-2 mb-4">{t('nagrikSeva.form.paymentScreenshot')}</h3>
-                  <div className="bg-gradient-to-br from-gray-50 to-blue-50 p-4 rounded-xl">
+                <div className="payment-section">
+                  <h3 className="section-title">{t('nagrikSeva.form.paymentScreenshot')}</h3>
+                  <div className="payment-image-container">
                     <img
                       src={selectedApplication.paymentScreenshot.data}
                       alt="Payment Screenshot"
-                      className="max-w-full h-64 object-contain mx-auto rounded-lg border-2 border-gray-200"
+                      className="payment-image"
                     />
                   </div>
                 </div>
               )}
+            </div>
 
-              {/* Action Buttons */}
-              <div className="flex items-center justify-end gap-3 pt-6 mt-6 border-t border-gray-200">
-                {selectedApplication.status === 'pending' && (
-                  <>
-                    <button
-                      onClick={() => handleStatusUpdate(selectedApplication._id, 'rejected')}
-                      className="bg-gradient-to-r from-red-600 to-pink-600 hover:from-red-700 hover:to-pink-700 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-semibold transition-all duration-300"
-                    >
-                      <XCircle size={18} />
-                      {t('nagrikSeva.applications.reject')}
-                    </button>
-                    <button
-                      onClick={() => handleStatusUpdate(selectedApplication._id, 'approved')}
-                      className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-semibold transition-all duration-300"
-                    >
-                      <CheckCircle size={18} />
-                      {t('nagrikSeva.applications.approve')}
-                    </button>
-                  </>
-                )}
+            {/* Fixed Footer - Action Buttons */}
+            <div className="modal-footer-fixed">
+              <button
+                onClick={() => setShowApplicationModal(false)}
+                className="btn btn-secondary"
+              >
+                {t('common.close')}
+              </button>
+              <div className="status-actions">
                 <button
-                  onClick={() => setShowApplicationModal(false)}
-                  className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 border-2 border-gray-300 rounded-xl font-semibold transition-all duration-200"
+                  onClick={() => handleStatusUpdate(selectedApplication._id, 'rejected')}
+                  className="btn btn-danger"
+                  disabled={isUpdatingStatus === selectedApplication._id}
                 >
-                  {t('common.close')}
+                  {isUpdatingStatus === selectedApplication._id ? (
+                    <div className="submit-spinner"></div>
+                  ) : (
+                    <XCircle size={16} />
+                  )}
+                  {t('nagrikSeva.applications.actions.reject')}
+                </button>
+                <button
+                  onClick={() => handleStatusUpdate(selectedApplication._id, 'approved')}
+                  className="btn btn-success"
+                  disabled={isUpdatingStatus === selectedApplication._id}
+                >
+                  {isUpdatingStatus === selectedApplication._id ? (
+                    <div className="submit-spinner"></div>
+                  ) : (
+                    <CheckCircle size={16} />
+                  )}
+                  {t('nagrikSeva.applications.actions.approve')}
                 </button>
               </div>
             </div>

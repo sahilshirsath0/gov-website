@@ -12,6 +12,7 @@ import {
   Save
 } from 'lucide-react';
 import { adminAPI } from '../../services/api';
+import './Announcements.css';
 
 const Announcements = () => {
   const { t } = useTranslation('admin');
@@ -26,6 +27,10 @@ const Announcements = () => {
     message: ''
   });
   const [submitError, setSubmitError] = useState('');
+  
+  // ADD: Single click prevention states
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(null); // Track which item is being deleted
 
   useEffect(() => {
     fetchAnnouncements();
@@ -44,6 +49,9 @@ const Announcements = () => {
   };
 
   const handleCreate = () => {
+    // Prevent opening modal if already submitting
+    if (isSubmitting) return;
+    
     setModalType('create');
     setSelectedAnnouncement(null);
     setFormData({ message: '' });
@@ -52,6 +60,9 @@ const Announcements = () => {
   };
 
   const handleEdit = (announcement) => {
+    // Prevent opening modal if already submitting
+    if (isSubmitting) return;
+    
     setModalType('edit');
     setSelectedAnnouncement(announcement);
     setFormData({
@@ -68,18 +79,28 @@ const Announcements = () => {
   };
 
   const handleDelete = async (id) => {
+    // Prevent multiple delete clicks
+    if (isDeleting === id) return;
+    
     if (window.confirm(t('announcements.confirmDelete'))) {
       try {
+        setIsDeleting(id); // Set deleting state
         await adminAPI.deleteAnnouncement(id);
         fetchAnnouncements();
       } catch (error) {
         console.error('Error deleting announcement:', error);
+      } finally {
+        setIsDeleting(null); // Clear deleting state
       }
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Prevent double submission
+    if (isSubmitting) return;
+    
     setSubmitError('');
 
     if (!formData.message.trim()) {
@@ -88,6 +109,8 @@ const Announcements = () => {
     }
 
     try {
+      setIsSubmitting(true); // Set submitting state
+
       const submitData = {
         message: formData.message.trim()
       };
@@ -107,7 +130,16 @@ const Announcements = () => {
     } catch (error) {
       console.error('Error submitting announcement:', error);
       setSubmitError(error.response?.data?.message || 'Error submitting announcement');
+    } finally {
+      setIsSubmitting(false); // Clear submitting state
     }
+  };
+
+  // Close modal handler
+  const handleCloseModal = () => {
+    // Prevent closing modal while submitting
+    if (isSubmitting) return;
+    setShowModal(false);
   };
 
   const filteredAnnouncements = announcements.filter(announcement => {
@@ -135,27 +167,28 @@ const Announcements = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="loading-container">
+        <div className="loading-spinner"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="announcements-container">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="announcements-header">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+          <h1 className="page-title">
             {t('announcements.title')}
           </h1>
-          <p className="text-gray-600">
+          <p className="page-subtitle">
             {t('announcements.subtitle')}
           </p>
         </div>
         <button
           onClick={handleCreate}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200"
+          className="btn-create"
+          disabled={isSubmitting}
         >
           <Plus size={20} />
           {t('announcements.create')}
@@ -163,25 +196,25 @@ const Announcements = () => {
       </div>
 
       {/* Filters */}
-      <div className="bg-white p-4 rounded-lg border border-gray-200">
-        <div className="flex flex-col sm:flex-row gap-4">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+      <div className="filters-card">
+        <div className="filters-container">
+          <div className="search-wrapper">
+            <Search className="search-icon" size={20} />
             <input
               type="text"
               placeholder={t('announcements.search')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="search-input"
             />
           </div>
 
-          <div className="relative">
-            <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+          <div className="filter-wrapper">
+            <Filter className="filter-icon" size={20} />
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="pl-10 pr-8 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              className="filter-select"
             >
               <option value="all">{t('announcements.filter.all')}</option>
               <option value="active">{t('announcements.filter.active')}</option>
@@ -192,21 +225,22 @@ const Announcements = () => {
       </div>
 
       {/* Announcements Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="announcements-grid">
         {filteredAnnouncements.length === 0 ? (
-          <div className="col-span-full text-center py-12">
-            <div className="text-gray-400 mb-4">
-              <MessageSquare size={48} className="mx-auto" />
+          <div className="empty-state">
+            <div className="empty-icon">
+              <MessageSquare size={48} />
             </div>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
+            <h3 className="empty-title">
               {t('announcements.empty.title')}
             </h3>
-            <p className="text-gray-600 mb-4">
+            <p className="empty-description">
               {t('announcements.empty.description')}
             </p>
             <button
               onClick={handleCreate}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg inline-flex items-center gap-2"
+              className="btn-create-empty"
+              disabled={isSubmitting}
             >
               <Plus size={20} />
               {t('announcements.create')}
@@ -214,48 +248,51 @@ const Announcements = () => {
           </div>
         ) : (
           filteredAnnouncements.map((announcement) => (
-            <div key={announcement._id} className="bg-white rounded-lg border border-gray-200 hover:shadow-lg transition-shadow duration-200">
-              <div className="p-6">
+            <div key={announcement._id} className="announcement-card">
+              <div className="announcement-card-body">
                 {/* Header */}
-                <div className="flex items-center justify-between mb-4">
-                  <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                    announcement.isActive 
-                      ? 'bg-green-100 text-green-800' 
-                      : 'bg-red-100 text-red-800'
-                  }`}>
+                <div className="announcement-card-header">
+                  <span className={`status-badge ${announcement.isActive ? 'status-active' : 'status-inactive'}`}>
                     {announcement.isActive ? t('announcements.status.active') : t('announcements.status.inactive')}
                   </span>
-                  <div className="flex items-center gap-1">
+                  <div className="announcement-actions">
                     <button
                       onClick={() => handleView(announcement)}
-                      className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-200"
+                      className="action-btn action-btn-view"
+                      disabled={isSubmitting}
                     >
                       <Eye size={16} />
                     </button>
                     <button
                       onClick={() => handleEdit(announcement)}
-                      className="p-2 text-gray-600 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors duration-200"
+                      className="action-btn action-btn-edit"
+                      disabled={isSubmitting}
                     >
                       <Edit2 size={16} />
                     </button>
                     <button
                       onClick={() => handleDelete(announcement._id)}
-                      className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors duration-200"
+                      className="action-btn action-btn-delete"
+                      disabled={isDeleting === announcement._id}
                     >
-                      <Trash2 size={16} />
+                      {isDeleting === announcement._id ? (
+                        <div className="delete-spinner"></div>
+                      ) : (
+                        <Trash2 size={16} />
+                      )}
                     </button>
                   </div>
                 </div>
 
                 {/* Message */}
-                <div className="mb-4">
-                  <p className="text-gray-900 text-sm leading-relaxed">
+                <div className="announcement-message">
+                  <p className="message-text">
                     {truncateMessage(announcement.message)}
                   </p>
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-between text-xs text-gray-500 pt-4 border-t border-gray-100">
+                <div className="announcement-footer">
                   <span>{t('announcements.createdBy')}: {announcement.createdBy?.username}</span>
                   <span>{formatDate(announcement.createdAt)}</span>
                 </div>
@@ -265,81 +302,80 @@ const Announcements = () => {
         )}
       </div>
 
-      {/* Modal */}
+      {/* FIXED: Scrollable Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-6 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">
+        <div className="modal-overlay">
+          <div className="modal-container">
+            {/* Fixed Header */}
+            <div className="modal-header">
+              <h2 className="modal-title">
                 {modalType === 'create' && t('announcements.modal.create')}
                 {modalType === 'edit' && t('announcements.modal.edit')}
                 {modalType === 'view' && t('announcements.modal.view')}
               </h2>
               <button
-                onClick={() => setShowModal(false)}
-                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors duration-200"
+                onClick={handleCloseModal}
+                className="modal-close-btn"
+                disabled={isSubmitting}
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="p-6">
+            {/* Scrollable Body */}
+            <div className="modal-body-scrollable">
               {modalType === 'view' ? (
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                <div className="view-content">
+                  <div className="view-field">
+                    <label className="view-label">
                       {t('announcements.form.message')}
                     </label>
-                    <div className="p-4 bg-gray-50 rounded-lg">
-                      <p className="text-gray-900 whitespace-pre-wrap leading-relaxed">
+                    <div className="view-value-box">
+                      <p className="view-value-text">
                         {selectedAnnouncement?.message}
                       </p>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="view-grid">
+                    <div className="view-field">
+                      <label className="view-label">
                         {t('announcements.form.status')}
                       </label>
-                      <span className={`px-3 py-1 text-sm font-medium rounded-full ${
-                        selectedAnnouncement?.isActive 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
+                      <span className={`status-badge-large ${selectedAnnouncement?.isActive ? 'status-active' : 'status-inactive'}`}>
                         {selectedAnnouncement?.isActive ? t('announcements.status.active') : t('announcements.status.inactive')}
                       </span>
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                    <div className="view-field">
+                      <label className="view-label">
                         {t('announcements.form.created')}
                       </label>
-                      <p className="text-sm text-gray-900">
+                      <p className="view-value">
                         {formatDate(selectedAnnouncement?.createdAt)}
                       </p>
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="view-field">
+                    <label className="view-label">
                       {t('announcements.form.createdBy')}
                     </label>
-                    <p className="text-sm text-gray-900">
+                    <p className="view-value">
                       {selectedAnnouncement?.createdBy?.username}
                     </p>
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <form onSubmit={handleSubmit} className="modal-form">
                   {/* Error Message */}
                   {submitError && (
-                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                    <div className="error-message">
                       {submitError}
                     </div>
                   )}
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <div className="form-group">
+                    <label className="form-label">
                       {t('announcements.form.message')} *
                     </label>
                     <textarea
@@ -347,29 +383,45 @@ const Announcements = () => {
                       onChange={(e) => setFormData({...formData, message: e.target.value})}
                       placeholder={t('announcements.form.messagePlaceholder')}
                       rows={8}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="form-textarea"
+                      disabled={isSubmitting}
                     />
-                  </div>
-
-                  <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200">
-                    <button
-                      type="button"
-                      onClick={() => setShowModal(false)}
-                      className="px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors duration-200"
-                    >
-                      {t('announcements.form.cancel')}
-                    </button>
-                    <button
-                      type="submit"
-                      className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors duration-200"
-                    >
-                      <Save size={16} />
-                      {modalType === 'create' ? t('announcements.form.create') : t('announcements.form.update')}
-                    </button>
                   </div>
                 </form>
               )}
             </div>
+
+            {/* Fixed Footer - Only for non-view modals */}
+            {modalType !== 'view' && (
+              <div className="modal-footer-fixed">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="btn-cancel"
+                  disabled={isSubmitting}
+                >
+                  {t('announcements.form.cancel')}
+                </button>
+                <button
+                  type="submit"
+                  onClick={handleSubmit}
+                  className="btn-submit"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="submit-spinner"></div>
+                      {modalType === 'create' ? 'Creating...' : 'Updating...'}
+                    </>
+                  ) : (
+                    <>
+                      <Save size={16} />
+                      {modalType === 'create' ? t('announcements.form.create') : t('announcements.form.update')}
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

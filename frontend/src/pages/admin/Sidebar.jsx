@@ -19,69 +19,68 @@ const Sidebar = () => {
   const location = useLocation();
   const { logout } = useAuth();
 
- // Update your Sidebar component to include the new menu items
-const menuItems = [
-  {
-    id: 'dashboard',
-    label: t('sidebar.dashboard'),
-    icon: LayoutDashboard,
-    path: '/admin-dashboard'
-  },
-  {
-    id: 'announcements',
-    label: t('sidebar.announcements'),
-    icon: Megaphone,
-    path: '/admin-dashboard/announcements'
-  },
-  {
-    id: 'gallery',
-    label: t('sidebar.gallery'),
-    icon: ImageIcon,
-    path: '/admin-dashboard/gallery'
-  },
-  {
-    id: 'nagrik-seva',
-    label: t('sidebar.nagrikSeva'),
-    icon: Users,
-    path: '/admin-dashboard/nagrik-seva'
-  },
-  {
-    id: 'village-details',
-    label: t('sidebar.villageDetails'),
-    icon: MapPin,
-    path: '/admin-dashboard/village-details'
-  },
-  {
-    id: 'programs',
-    label: t('sidebar.programs'),
-    icon: Award,
-    path: '/admin-dashboard/programs'
-  },
-  {
-    id: 'awards',
-    label: t('sidebar.awards'),
-    icon: Award,
-    path: '/admin-dashboard/awards'
-  },
-  {
-    id: 'members',
-    label: t('sidebar.members'),
-    icon: Users,
-    path: '/admin-dashboard/members'
-  },
-  {
-    id: 'feedback',
-    label: t('sidebar.feedback'),
-    icon: MessageSquare,
-    path: '/admin-dashboard/feedback'
-  }
-];
-
+  // Menu items
+  const menuItems = [
+    {
+      id: 'dashboard',
+      label: t('sidebar.dashboard'),
+      icon: LayoutDashboard,
+      path: '/admin-dashboard'
+    },
+    {
+      id: 'announcements',
+      label: t('sidebar.announcements'),
+      icon: Megaphone,
+      path: '/admin-dashboard/announcements'
+    },
+    {
+      id: 'gallery',
+      label: t('sidebar.gallery'),
+      icon: ImageIcon,
+      path: '/admin-dashboard/gallery'
+    },
+    {
+      id: 'nagrik-seva',
+      label: t('sidebar.nagrikSeva'),
+      icon: Users,
+      path: '/admin-dashboard/nagrik-seva'
+    },
+    {
+      id: 'village-details',
+      label: t('sidebar.villageDetails'),
+      icon: MapPin,
+      path: '/admin-dashboard/village-details'
+    },
+    {
+      id: 'programs',
+      label: t('sidebar.programs'),
+      icon: Award,
+      path: '/admin-dashboard/programs'
+    },
+    {
+      id: 'awards',
+      label: t('sidebar.awards'),
+      icon: Award,
+      path: '/admin-dashboard/awards'
+    },
+    {
+      id: 'members',
+      label: t('sidebar.members'),
+      icon: Users,
+      path: '/admin-dashboard/members'
+    },
+    {
+      id: 'feedback',
+      label: t('sidebar.feedback'),
+      icon: MessageSquare,
+      path: '/admin-dashboard/feedback'
+    }
+  ];
 
   const isActive = (path) => location.pathname === path;
 
   return (
-    <div className="bg-blue-900 text-white w-64 min-h-screen flex flex-col">
+    <div className="bg-blue-900 text-white w-64 min-h-screen flex flex-col fixed left-0 top-0 z-50">
       {/* Logo */}
       <div className="p-6 border-b border-blue-800">
         <div className="flex items-center gap-3">
@@ -96,9 +95,9 @@ const menuItems = [
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 p-4">
-        <div className="space-y-2">
-          {menuItems.map((item) => {
+      <nav className="flex-1 p-4 overflow-y-auto">
+        <div>
+          {menuItems.map((item, index) => {
             const Icon = item.icon;
             return (
               <Link
@@ -109,6 +108,7 @@ const menuItems = [
                     ? 'bg-blue-600 text-white'
                     : 'text-blue-200 hover:bg-blue-800 hover:text-white'
                 }`}
+                style={{ marginBottom: '12px' }}
               >
                 <Icon size={20} />
                 <span className="font-medium">{item.label}</span>

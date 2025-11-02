@@ -16,6 +16,7 @@ import {
   Filter
 } from 'lucide-react';
 import { adminAPI } from '../../services/api';
+import './VillageDetails.css';
 
 const VillageDetails = () => {
   const { t } = useTranslation('admin');
@@ -39,9 +40,39 @@ const VillageDetails = () => {
     }
   });
 
+  // ADD: Single click prevention and upload states
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
   useEffect(() => {
     fetchVillageDetails();
   }, []);
+
+  // Image compression function
+  const compressImage = (file, maxWidth = 1200, quality = 0.8) => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      
+      img.onload = () => {
+        let { width, height } = img;
+        
+        if (width > maxWidth) {
+          height = (height * maxWidth) / width;
+          width = maxWidth;
+        }
+        
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(resolve, 'image/jpeg', quality);
+      };
+      
+      img.src = URL.createObjectURL(file);
+    });
+  };
 
   const fetchVillageDetails = async () => {
     try {
@@ -57,6 +88,8 @@ const VillageDetails = () => {
   };
 
   const handleCreate = () => {
+    if (isSubmitting) return;
+    
     console.log('Create button clicked');
     setModalType('create');
     setSelectedVillageDetail(null);
@@ -67,10 +100,13 @@ const VillageDetails = () => {
     setSelectedFile(null);
     setPreviewUrl('');
     setSubmitError('');
+    setUploadProgress(0);
     setShowModal(true);
   };
 
   const handleEdit = (villageDetail) => {
+    if (isSubmitting) return;
+    
     console.log('Edit button clicked');
     setModalType('edit');
     setSelectedVillageDetail(villageDetail);
@@ -98,12 +134,17 @@ const VillageDetails = () => {
   };
 
   const handleDelete = async (id) => {
+    if (isDeleting === id) return;
+    
     if (window.confirm(t('villageDetails.confirmDelete'))) {
       try {
+        setIsDeleting(id);
         await adminAPI.deleteVillageDetail(id);
         fetchVillageDetails();
       } catch (error) {
         console.error('Error deleting village detail:', error);
+      } finally {
+        setIsDeleting(null);
       }
     }
   };
@@ -137,7 +178,11 @@ const VillageDetails = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    if (isSubmitting) return;
+    
     setSubmitError('');
+    setUploadProgress(0);
 
     console.log('Form submitted with data:', formData);
 
@@ -157,19 +202,33 @@ const VillageDetails = () => {
     }
 
     try {
+      setIsSubmitting(true);
+
       const submitData = {
         title: formData.title,
         description: formData.description
       };
 
       if (selectedFile) {
-        const base64Data = await convertFileToBase64(selectedFile);
+        // Step 1: Compress image (25% progress)
+        setUploadProgress(25);
+        console.log('Compressing image...');
+        const compressedFile = await compressImage(selectedFile);
+        
+        // Step 2: Convert to base64 (50% progress)
+        setUploadProgress(50);
+        const base64Data = await convertFileToBase64(compressedFile);
+        
         submitData.imageData = base64Data;
-        submitData.contentType = selectedFile.type;
+        submitData.contentType = 'image/jpeg';
         submitData.filename = selectedFile.name;
-        submitData.size = selectedFile.size;
+        submitData.size = compressedFile.size;
+        
+        console.log('Compressed file size:', compressedFile.size);
       }
 
+      // Step 3: Upload (75% progress)
+      setUploadProgress(75);
       console.log('Submitting data:', submitData);
 
       if (modalType === 'create') {
@@ -177,19 +236,45 @@ const VillageDetails = () => {
       } else {
         await adminAPI.updateVillageDetail(selectedVillageDetail._id, submitData);
       }
+      
+      setUploadProgress(100);
 
-      setShowModal(false);
-      fetchVillageDetails();
-      setFormData({
-        title: { en: '', mr: '' },
-        description: { en: '', mr: '' }
-      });
-      setSelectedFile(null);
-      setPreviewUrl('');
+      // Success delay for user feedback
+      setTimeout(() => {
+        setShowModal(false);
+        setIsSubmitting(false);
+        setUploadProgress(0);
+        fetchVillageDetails();
+        setFormData({
+          title: { en: '', mr: '' },
+          description: { en: '', mr: '' }
+        });
+        setSelectedFile(null);
+        setPreviewUrl('');
+      }, 500);
+
     } catch (error) {
       console.error('Error submitting village detail:', error);
-      setSubmitError(error.response?.data?.message || 'Error submitting village detail');
+      setIsSubmitting(false);
+      setUploadProgress(0);
+      
+      if (error.code === 'ECONNABORTED') {
+        setSubmitError('Upload timeout. Please try with a smaller image or check your internet connection.');
+      } else {
+        setSubmitError(error.response?.data?.message || 'Error submitting village detail');
+      }
     }
+  };
+
+  const handleCloseModal = () => {
+    if (isSubmitting) return;
+    setShowModal(false);
+  };
+
+  const removeFile = () => {
+    if (isSubmitting) return;
+    setSelectedFile(null);
+    setPreviewUrl('');
   };
 
   const filteredVillageDetails = villageDetails.filter(detail => 
@@ -209,65 +294,66 @@ const VillageDetails = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="relative">
-          <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-200"></div>
-          <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-blue-600 absolute top-0 left-0"></div>
+      <div className="loading-container">
+        <div className="loading-spinner-wrapper">
+          <div className="loading-spinner-outer"></div>
+          <div className="loading-spinner-inner"></div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="village-details-container">
       {/* Header Section */}
-      <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-700 rounded-2xl shadow-xl p-8 text-white">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="space-y-2">
-            <div className="flex items-center gap-3">
-              <div className="bg-white/20 backdrop-blur-sm p-3 rounded-xl">
-                <MapPin className="h-8 w-8" />
+      <div className="page-header">
+        <div className="page-header-content">
+          <div className="page-header-left">
+            <div className="header-icon-wrapper">
+              <div className="header-icon-container">
+                <MapPin className="header-icon" />
               </div>
               <div>
-                <h1 className="text-3xl font-bold tracking-tight">{t('villageDetails.title')}</h1>
-                <p className="text-blue-100 mt-1 text-sm">{t('villageDetails.subtitle')}</p>
+                <h1 className="page-title">{t('villageDetails.title')}</h1>
+                <p className="page-subtitle">{t('villageDetails.subtitle')}</p>
               </div>
             </div>
-            <div className="flex items-center gap-4 text-sm">
-              <div className="bg-white/10 backdrop-blur-sm px-3 py-1.5 rounded-lg">
-                <span className="font-semibold">{villageDetails.length}</span> Total Details
+            <div className="stats-container">
+              <div className="stat-badge">
+                <span className="stat-value">{villageDetails.length}</span> Total Details
               </div>
             </div>
           </div>
           
           <button
             onClick={handleCreate}
-            className="bg-white text-blue-600 hover:bg-blue-50 px-6 py-3.5 rounded-xl flex items-center gap-2 transition-all duration-300 shadow-lg hover:shadow-xl hover:scale-105 font-semibold group"
+            className="btn-create-header"
+            disabled={isSubmitting}
           >
-            <Plus size={20} className="group-hover:rotate-90 transition-transform duration-300" />
+            <Plus size={20} className="btn-icon-rotate" />
             {t('villageDetails.create')}
           </button>
         </div>
       </div>
 
       {/* Search & Filter */}
-      <div className="bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden">
-        <div className="bg-gradient-to-r from-gray-50 to-blue-50 px-6 py-3 border-b border-gray-200">
-          <h3 className="font-semibold text-gray-700 flex items-center gap-2">
+      <div className="content-card">
+        <div className="card-header">
+          <h3 className="card-title">
             <Filter size={18} />
             Search Village Details
           </h3>
         </div>
-        <div className="p-6">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative group">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-blue-600 transition-colors duration-200" size={20} />
+        <div className="card-body">
+          <div className="search-container">
+            <div className="search-input-wrapper">
+              <Search className="search-icon" size={20} />
               <input
                 type="text"
                 placeholder="Search village details..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-12 pr-4 py-3.5 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                className="search-input"
               />
             </div>
           </div>
@@ -275,20 +361,21 @@ const VillageDetails = () => {
       </div>
 
       {/* Village Details Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+      <div className="village-grid">
         {filteredVillageDetails.length === 0 ? (
-          <div className="col-span-full">
-            <div className="bg-white rounded-2xl shadow-lg border-2 border-dashed border-gray-300 p-16 text-center">
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
-                <MapPin size={48} className="text-blue-500" />
+          <div className="empty-state">
+            <div className="empty-state-content">
+              <div className="empty-state-icon">
+                <MapPin size={48} />
               </div>
-              <h3 className="text-2xl font-bold text-gray-900 mb-3">{t('villageDetails.empty.title')}</h3>
-              <p className="text-gray-600 mb-6 max-w-md mx-auto">
+              <h3 className="empty-state-title">{t('villageDetails.empty.title')}</h3>
+              <p className="empty-state-description">
                 {t('villageDetails.empty.description')}
               </p>
               <button
                 onClick={handleCreate}
-                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-3.5 rounded-xl inline-flex items-center gap-2 shadow-lg hover:shadow-xl transition-all duration-300 font-semibold"
+                className="btn-create-empty"
+                disabled={isSubmitting}
               >
                 <Plus size={20} />
                 {t('villageDetails.create')}
@@ -297,67 +384,86 @@ const VillageDetails = () => {
           </div>
         ) : (
           filteredVillageDetails.map((detail) => (
-            <div key={detail._id} className="group bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-2xl transition-all duration-500 transform hover:-translate-y-2">
+            <div key={detail._id} className="village-card">
               {/* Image */}
-              <div className="relative aspect-video bg-gradient-to-br from-gray-100 to-blue-100 overflow-hidden">
+              <div className="village-image-container">
                 {detail.image?.data ? (
                   <img
                     src={detail.image.data}
                     alt={detail.title?.en}
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                    className="village-image"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <FileText size={48} className="text-gray-400" />
+                  <div className="village-image-placeholder">
+                    <FileText size={48} />
                   </div>
                 )}
               </div>
 
-              <div className="p-6">
+              <div className="village-card-body">
                 {/* Header */}
-                <div className="flex items-start justify-between mb-3">
-                  <h3 className="font-bold text-gray-900 text-lg group-hover:text-blue-600 transition-colors duration-300 line-clamp-2">
+                <div className="village-card-header">
+                  <h3 className="village-title">
                     {detail.title?.en}
                   </h3>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <div className="village-actions">
                     <button
                       onClick={() => handleView(detail)}
-                      className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all duration-200 transform hover:scale-110"
+                      className="action-btn action-btn-view"
                       title={t('common.view')}
+                      disabled={isSubmitting}
                     >
                       <Eye size={16} />
                     </button>
                     <button
                       onClick={() => handleEdit(detail)}
-                      className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all duration-200 transform hover:scale-110"
+                      className="action-btn action-btn-edit"
                       title={t('common.edit')}
+                      disabled={isSubmitting}
                     >
                       <Edit2 size={16} />
                     </button>
                     <button
                       onClick={() => handleDelete(detail._id)}
-                      className="p-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200 transform hover:scale-110"
+                      className="action-btn action-btn-delete"
                       title={t('common.delete')}
+                      disabled={isDeleting === detail._id}
                     >
-                      <Trash2 size={16} />
+                      {isDeleting === detail._id ? (
+                        <div className="delete-spinner"></div>
+                      ) : (
+                        <Trash2 size={16} />
+                      )}
                     </button>
                   </div>
                 </div>
 
+                {/* Language Badge */}
+                <div className="language-badges">
+                  <span className="language-badge badge-english">
+                    <Globe size={12} />
+                    English
+                  </span>
+                  <span className="language-badge badge-marathi">
+                    <Globe size={12} />
+                    मराठी
+                  </span>
+                </div>
+
                 {/* Description */}
-                <div className="mb-4">
-                  <p className="text-gray-600 text-sm leading-relaxed line-clamp-3">
+                <div className="village-description">
+                  <p className="description-text">
                     {detail.description?.en}
                   </p>
                 </div>
 
                 {/* Footer */}
-                <div className="pt-4 border-t border-gray-100">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="bg-gradient-to-r from-blue-50 to-indigo-50 text-blue-700 px-2 py-1 rounded-md font-medium">
+                <div className="village-card-footer">
+                  <div className="footer-content">
+                    <span className="footer-date">
                       {formatDate(detail.createdAt)}
                     </span>
-                    <span className="text-gray-500 font-medium">
+                    <span className="footer-author">
                       {detail.createdBy?.username || 'Admin'}
                     </span>
                   </div>
@@ -368,14 +474,15 @@ const VillageDetails = () => {
         )}
       </div>
 
-      {/* Modal - Same as before but updated to handle selectedVillageDetail */}
+      {/* FIXED: Scrollable Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-5 text-white">
-              <div className="flex items-center justify-between">
-                <h2 className="text-2xl font-bold flex items-center gap-3">
-                  <div className="bg-white/20 backdrop-blur-sm p-2 rounded-lg">
+        <div className="modal-overlay">
+          <div className="modal-container modal-xl">
+            {/* Fixed Header */}
+            <div className="modal-header">
+              <div className="modal-header-content">
+                <h2 className="modal-title">
+                  <div className="modal-icon">
                     {modalType === 'create' && <Plus size={24} />}
                     {modalType === 'edit' && <Edit2 size={24} />}
                     {modalType === 'view' && <Eye size={24} />}
@@ -385,110 +492,111 @@ const VillageDetails = () => {
                   {modalType === 'view' && t('villageDetails.modal.view')}
                 </h2>
                 <button
-                  onClick={() => setShowModal(false)}
-                  className="p-2 text-white/80 hover:text-white hover:bg-white/20 rounded-lg transition-all duration-200"
+                  onClick={handleCloseModal}
+                  className="modal-close-btn"
+                  disabled={isSubmitting}
                 >
                   <X size={24} />
                 </button>
               </div>
             </div>
 
-            <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
+            {/* Scrollable Body */}
+            <div className="modal-body-scrollable">
               {modalType === 'view' ? (
-                <div className="space-y-6">
+                <div className="view-mode-content">
                   {/* View Mode Content */}
                   {selectedVillageDetail?.image?.data && (
-                    <div className="bg-gradient-to-br from-gray-50 to-blue-50 p-6 rounded-xl">
+                    <div className="view-image-container">
                       <img
                         src={selectedVillageDetail.image.data}
                         alt="Village"
-                        className="max-w-full h-64 object-contain mx-auto rounded-xl shadow-lg"
+                        className="view-image"
                       />
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="view-language-grid">
                     {/* English Content */}
-                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-5 rounded-xl border border-blue-100">
-                      <h4 className="font-bold text-blue-800 mb-4 flex items-center gap-2">
-                        <div className="w-6 h-4 bg-gradient-to-r from-blue-600 to-red-600 rounded-sm"></div>
+                    <div className="language-card language-card-english">
+                      <h4 className="language-title language-title-english">
+                        <div className="language-flag flag-english"></div>
                         {t('villageDetails.form.englishContent')}
                       </h4>
-                      <div className="space-y-3">
+                      <div className="language-content">
                         <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-1">{t('villageDetails.form.title')}</label>
-                          <p className="text-gray-900 font-semibold">{selectedVillageDetail?.title?.en}</p>
+                          <label className="view-label">{t('villageDetails.form.title')}</label>
+                          <p className="view-value view-value-title">{selectedVillageDetail?.title?.en}</p>
                         </div>
                         <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-1">{t('villageDetails.form.description')}</label>
-                          <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{selectedVillageDetail?.description?.en}</p>
+                          <label className="view-label">{t('villageDetails.form.description')}</label>
+                          <p className="view-value view-value-description">{selectedVillageDetail?.description?.en}</p>
                         </div>
                       </div>
                     </div>
 
                     {/* Marathi Content */}
-                    <div className="bg-gradient-to-br from-orange-50 to-red-50 p-5 rounded-xl border border-orange-100">
-                      <h4 className="font-bold text-orange-800 mb-4 flex items-center gap-2">
-                        <div className="w-6 h-4 bg-gradient-to-r from-orange-500 to-red-500 rounded-sm"></div>
+                    <div className="language-card language-card-marathi">
+                      <h4 className="language-title language-title-marathi">
+                        <div className="language-flag flag-marathi"></div>
                         {t('villageDetails.form.marathiContent')}
                       </h4>
-                      <div className="space-y-3">
+                      <div className="language-content">
                         <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-1">{t('villageDetails.form.titleMr')}</label>
-                          <p className="text-gray-900 font-semibold">{selectedVillageDetail?.title?.mr}</p>
+                          <label className="view-label">{t('villageDetails.form.titleMr')}</label>
+                          <p className="view-value view-value-title">{selectedVillageDetail?.title?.mr}</p>
                         </div>
                         <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-1">{t('villageDetails.form.descriptionMr')}</label>
-                          <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{selectedVillageDetail?.description?.mr}</p>
+                          <label className="view-label">{t('villageDetails.form.descriptionMr')}</label>
+                          <p className="view-value view-value-description">{selectedVillageDetail?.description?.mr}</p>
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
               ) : (
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <form onSubmit={handleSubmit} className="modal-form">
                   {submitError && (
-                    <div className="bg-gradient-to-r from-red-50 to-pink-50 border-l-4 border-red-500 text-red-700 px-5 py-4 rounded-xl">
+                    <div className="error-message">
                       {submitError}
                     </div>
                   )}
 
                   {/* Image Upload */}
                   {modalType === 'create' && (
-                    <div className="space-y-4">
-                      <label className="block text-sm font-bold text-gray-700">{t('villageDetails.form.villageImage')} *</label>
-                      <div className="flex items-center justify-center w-full">
-                        <label className="flex flex-col items-center justify-center w-full h-48 border-3 border-blue-300 border-dashed rounded-2xl cursor-pointer bg-gradient-to-br from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 transition-all duration-300">
-                          <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                            <Upload className="w-10 h-10 mb-3 text-blue-500" />
-                            <p className="mb-2 text-sm text-gray-700 font-semibold">
-                              <span className="text-blue-600">{t('villageDetails.form.clickToUpload')}</span>
+                    <div className="form-group">
+                      <label className="form-label">{t('villageDetails.form.villageImage')} *</label>
+                      <div className="file-upload-wrapper">
+                        <label className={`file-upload-label ${isSubmitting ? 'disabled' : ''}`}>
+                          <div className="file-upload-content">
+                            <Upload className="upload-icon" />
+                            <p className="upload-text">
+                              <span className="upload-text-highlight">{t('villageDetails.form.clickToUpload')}</span>
                             </p>
-                            <p className="text-xs text-gray-500">PNG, JPG, GIF (MAX. 10MB)</p>
+                            <p className="upload-hint">PNG, JPG, GIF (MAX. 10MB)</p>
                           </div>
                           <input
                             type="file"
                             onChange={handleFileChange}
                             accept="image/*"
-                            className="hidden"
+                            className="file-input"
+                            disabled={isSubmitting}
                           />
                         </label>
                       </div>
 
                       {previewUrl && (
-                        <div className="relative">
+                        <div className="preview-container">
                           <img
                             src={previewUrl}
                             alt="Preview"
-                            className="w-full h-48 object-cover rounded-xl border-2 border-blue-200"
+                            className="preview-image"
                           />
                           <button
                             type="button"
-                            onClick={() => {
-                              setSelectedFile(null);
-                              setPreviewUrl('');
-                            }}
-                            className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-full hover:bg-red-700"
+                            onClick={removeFile}
+                            className="preview-remove-btn"
+                            disabled={isSubmitting}
                           >
                             <X size={16} />
                           </button>
@@ -498,37 +606,36 @@ const VillageDetails = () => {
                   )}
 
                   {modalType === 'edit' && (
-                    <div className="space-y-4">
-                      <label className="block text-sm font-bold text-gray-700">{t('villageDetails.form.updateImage')}</label>
-                      <div className="flex items-center justify-center w-full">
-                        <label className="flex flex-col items-center justify-center w-full h-32 border-3 border-blue-300 border-dashed rounded-2xl cursor-pointer bg-gradient-to-br from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 transition-all duration-300">
-                          <div className="flex flex-col items-center justify-center pt-3 pb-3">
-                            <Upload className="w-6 h-6 mb-2 text-blue-500" />
-                            <p className="text-xs text-gray-700 font-semibold">{t('villageDetails.form.clickToUpload')}</p>
+                    <div className="form-group">
+                      <label className="form-label">{t('villageDetails.form.updateImage')}</label>
+                      <div className="file-upload-wrapper">
+                        <label className={`file-upload-label file-upload-label-compact ${isSubmitting ? 'disabled' : ''}`}>
+                          <div className="file-upload-content file-upload-content-compact">
+                            <Upload className="upload-icon-sm" />
+                            <p className="upload-text-sm">{t('villageDetails.form.clickToUpload')}</p>
                           </div>
                           <input
                             type="file"
                             onChange={handleFileChange}
                             accept="image/*"
-                            className="hidden"
+                            className="file-input"
+                            disabled={isSubmitting}
                           />
                         </label>
                       </div>
 
                       {previewUrl && (
-                        <div className="relative">
+                        <div className="preview-container">
                           <img
                             src={previewUrl}
                             alt="Preview"
-                            className="w-full h-32 object-cover rounded-xl border-2 border-blue-200"
+                            className="preview-image preview-image-compact"
                           />
                           <button
                             type="button"
-                            onClick={() => {
-                              setSelectedFile(null);
-                              setPreviewUrl('');
-                            }}
-                            className="absolute top-2 right-2 bg-red-600 text-white p-2 rounded-full hover:bg-red-700"
+                            onClick={removeFile}
+                            className="preview-remove-btn"
+                            disabled={isSubmitting}
                           >
                             <X size={16} />
                           </button>
@@ -538,16 +645,16 @@ const VillageDetails = () => {
                   )}
 
                   {/* Multi-language Form */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="form-language-grid">
                     {/* English Form */}
-                    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 p-5 rounded-xl border border-blue-100">
-                      <h4 className="font-bold text-blue-800 mb-4 flex items-center gap-2">
-                        <div className="w-6 h-4 bg-gradient-to-r from-blue-600 to-red-600 rounded-sm"></div>
+                    <div className="language-card language-card-english">
+                      <h4 className="language-title language-title-english">
+                        <div className="language-flag flag-english"></div>
                         {t('villageDetails.form.englishContent')}
                       </h4>
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">{t('villageDetails.form.titleEn')} *</label>
+                      <div className="language-form-fields">
+                        <div className="form-field">
+                          <label className="form-label">{t('villageDetails.form.titleEn')} *</label>
                           <input
                             type="text"
                             value={formData.title.en}
@@ -556,11 +663,12 @@ const VillageDetails = () => {
                               title: { ...formData.title, en: e.target.value }
                             })}
                             placeholder={t('villageDetails.form.titlePlaceholderEn')}
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                            className="form-input"
+                            disabled={isSubmitting}
                           />
                         </div>
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">{t('villageDetails.form.descriptionEn')} *</label>
+                        <div className="form-field">
+                          <label className="form-label">{t('villageDetails.form.descriptionEn')} *</label>
                           <textarea
                             value={formData.description.en}
                             onChange={(e) => setFormData({
@@ -569,21 +677,22 @@ const VillageDetails = () => {
                             })}
                             placeholder={t('villageDetails.form.descriptionPlaceholderEn')}
                             rows={6}
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 resize-none"
+                            className="form-textarea"
+                            disabled={isSubmitting}
                           />
                         </div>
                       </div>
                     </div>
 
                     {/* Marathi Form */}
-                    <div className="bg-gradient-to-br from-orange-50 to-red-50 p-5 rounded-xl border border-orange-100">
-                      <h4 className="font-bold text-orange-800 mb-4 flex items-center gap-2">
-                        <div className="w-6 h-4 bg-gradient-to-r from-orange-500 to-red-500 rounded-sm"></div>
+                    <div className="language-card language-card-marathi">
+                      <h4 className="language-title language-title-marathi">
+                        <div className="language-flag flag-marathi"></div>
                         {t('villageDetails.form.marathiContent')}
                       </h4>
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">{t('villageDetails.form.titleMr')} *</label>
+                      <div className="language-form-fields">
+                        <div className="form-field">
+                          <label className="form-label">{t('villageDetails.form.titleMr')} *</label>
                           <input
                             type="text"
                             value={formData.title.mr}
@@ -592,11 +701,12 @@ const VillageDetails = () => {
                               title: { ...formData.title, mr: e.target.value }
                             })}
                             placeholder={t('villageDetails.form.titlePlaceholderMr')}
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200"
+                            className="form-input"
+                            disabled={isSubmitting}
                           />
                         </div>
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">{t('villageDetails.form.descriptionMr')} *</label>
+                        <div className="form-field">
+                          <label className="form-label">{t('villageDetails.form.descriptionMr')} *</label>
                           <textarea
                             value={formData.description.mr}
                             onChange={(e) => setFormData({
@@ -605,32 +715,51 @@ const VillageDetails = () => {
                             })}
                             placeholder={t('villageDetails.form.descriptionPlaceholderMr')}
                             rows={6}
-                            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all duration-200 resize-none"
+                            className="form-textarea"
+                            disabled={isSubmitting}
                           />
                         </div>
                       </div>
                     </div>
                   </div>
-
-                  <div className="flex items-center justify-end gap-3 pt-6 border-t border-gray-200">
-                    <button
-                      type="button"
-                      onClick={() => setShowModal(false)}
-                      className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 border-2 border-gray-300 rounded-xl font-semibold transition-all duration-200"
-                    >
-                      {t('villageDetails.form.cancel')}
-                    </button>
-                    <button
-                      type="submit"
-                      className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-semibold shadow-lg hover:shadow-xl transition-all duration-300 transform hover:scale-105"
-                    >
-                      <Save size={18} />
-                      {modalType === 'create' ? t('villageDetails.form.create') : t('villageDetails.form.update')}
-                    </button>
-                  </div>
                 </form>
               )}
             </div>
+
+            {/* Fixed Footer - Only for non-view modals */}
+            {modalType !== 'view' && (
+              <div className="modal-footer-fixed">
+                <button
+                  type="button"
+                  onClick={handleCloseModal}
+                  className="btn btn-secondary"
+                  disabled={isSubmitting}
+                >
+                  {t('villageDetails.form.cancel')}
+                </button>
+                <button
+                  type="submit"
+                  onClick={handleSubmit}
+                  className="btn btn-primary"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <div className="submit-spinner"></div>
+                      {modalType === 'create' 
+                        ? (selectedFile ? `Uploading... ${uploadProgress}%` : 'Creating...')
+                        : (selectedFile ? `Uploading... ${uploadProgress}%` : 'Updating...')
+                      }
+                    </>
+                  ) : (
+                    <>
+                      <Save size={18} />
+                      {modalType === 'create' ? t('villageDetails.form.create') : t('villageDetails.form.update')}
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

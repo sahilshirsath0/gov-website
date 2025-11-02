@@ -11,6 +11,8 @@ import {
   FileText
 } from 'lucide-react';
 import { adminAPI } from '../../services/api';
+import './DashboardStats.css';
+
 
 const DashboardStats = () => {
   const { t } = useTranslation('admin');
@@ -23,6 +25,7 @@ const DashboardStats = () => {
     nagrikSevaApplications: 0,
     programs: 0
   });
+
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -45,6 +48,7 @@ const DashboardStats = () => {
           adminAPI.getPrograms().catch(() => ({ data: { data: [] } }))
         ]);
 
+
         setStats({
           announcements: announcements.data.data?.length || 0,
           gallery: gallery.data.data?.length || 0,
@@ -59,64 +63,62 @@ const DashboardStats = () => {
       }
     };
 
+
     fetchStats();
   }, []);
+
 
   const statItems = [
     {
       title: t('dashboard.stats.totalAnnouncements') || 'Announcements',
       value: stats.announcements,
       icon: Megaphone,
-      color: 'from-blue-500 to-cyan-500',
-      bgColor: 'from-blue-50 to-cyan-50'
+      color: 'stat-blue-cyan'
     },
     {
       title: t('dashboard.stats.totalGallery') || 'Gallery Items',
       value: stats.gallery,
       icon: ImageIcon,
-      color: 'from-green-500 to-emerald-500',
-      bgColor: 'from-green-50 to-emerald-50'
+      color: 'stat-green-emerald'
     },
     {
       title: 'नागरिक सेवा',
       value: stats.nagrikSevaApplications,
       icon: Users,
-      color: 'from-purple-500 to-fuchsia-500',
-      bgColor: 'from-purple-50 to-fuchsia-50'
+      color: 'stat-purple-fuchsia'
     },
     {
       title: 'Programs',
       value: stats.programs,
       icon: Award,
-      color: 'from-yellow-500 to-orange-500',
-      bgColor: 'from-yellow-50 to-orange-50'
+      color: 'stat-yellow-orange'
     },
     {
       title: t('dashboard.stats.pendingFeedback') || 'Pending Feedback',
       value: stats.feedback,
       icon: MessageSquare,
-      color: 'from-red-500 to-pink-500',
-      bgColor: 'from-red-50 to-pink-50'
+      color: 'stat-red-pink'
     }
   ];
 
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+    <div className="dashboard-stats-container">
       {statItems.map((item, index) => {
         const Icon = item.icon;
         return (
-          <div key={index} className={`group relative overflow-hidden bg-gradient-to-br ${item.bgColor} rounded-2xl p-6 border border-gray-200 hover:shadow-lg transition-all duration-300 hover:scale-105`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-gray-700 mb-2">
+          <div key={index} className="stat-card">
+            <div className="stat-card-content">
+              <div className="stat-info">
+                <p className="stat-title">
                   {item.title}
                 </p>
-                <p className="text-4xl font-black text-gray-900">
+                <p className="stat-value">
                   {item.value}
                 </p>
               </div>
-              <div className={`bg-gradient-to-r ${item.color} p-4 rounded-xl shadow-lg group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
-                <Icon className="h-7 w-7 text-white" />
+              <div className={`stat-icon ${item.color}`}>
+                <Icon className="icon" />
               </div>
             </div>
           </div>
@@ -125,5 +127,6 @@ const DashboardStats = () => {
     </div>
   );
 };
+
 
 export default DashboardStats;
